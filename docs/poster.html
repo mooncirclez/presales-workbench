@@ -88,21 +88,20 @@ h1 em{font-style:normal;color:#9db6ff}
     <div><b>售前工作台</b><span>Presales Workbench</span></div>
   </div>
   <h1>用得起公网大模型,<br><em>又不把客户名字交出去</em></h1>
-  <p class="sub">给售前工程师的本地 AI 工作台。<br>
-    <b>不是靠提示词求 AI 别看,是把工具层封死。</b></p>
+  <p class="sub">给售前工程师的本地 AI 工作台。<br>AI 替你写方案、盯项目 —— <b>但客户是谁,它从头到尾不知道。</b></p>
 </div>
 
 <div class="mid">
-  <div class="eyebrow">四层机制 · 每层都不依赖模型自觉</div>
+  <div class="eyebrow">四道保障 · 不靠 AI 自觉,靠机制</div>
   <div class="layers">
-    <div class="ly"><span class="n">01</span><b>写入即代号化</b>
-      <span>客户名、联系人、地址<b>落盘那一刻</b>就是假名。真名只存 <code>.mask/map.json</code> 一处。</span></div>
-    <div class="ly"><span class="n">02</span><b>可读范围是硬边界</b>
-      <span>知识库逐目录勾选放通,用 <code>permissions.deny</code> —— 实测能盖过 <code>bypassPermissions</code>。</span></div>
-    <div class="ly"><span class="n">03</span><b>凭证与真名同级</b>
-      <span>映射表、API key、回收站一律对 AI 封读。key 权限 600,接口只回脱敏值。</span></div>
-    <div class="ly"><span class="n">04</span><b>数据没离开这台机器</b>
-      <span>服务只绑 <code>127.0.0.1</code>。档案就是你磁盘上的 Markdown,工作台删了资产还在。</span></div>
+    <div class="ly"><span class="n">01</span><b>客户一律化名</b>
+      <span>存进电脑那一刻就换成化名,AI 看到的是「sl银行」,<b>不知道那是谁</b>。真名只在你电脑的一张对照表里。</span></div>
+    <div class="ly"><span class="n">02</span><b>看什么,由你授权</b>
+      <span>资料逐项勾选放行。没勾的 AI 不是「答应不看」,是<b>打不开</b> —— 是门锁,不是口头约定。</span></div>
+    <div class="ly"><span class="n">03</span><b>要害锁进保险柜</b>
+      <span>真名对照表、模型密钥、回收站,AI 一律进不去;密钥永不明文外露。</span></div>
+    <div class="ly"><span class="n">04</span><b>档案不出你电脑</b>
+      <span>工作台在本机运行,不上传云端。档案就是磁盘上的文件,不用了资产还在。</span></div>
   </div>
 
   <div class="demo">
@@ -119,8 +118,8 @@ h1 em{font-style:normal;color:#9db6ff}
 
   <div class="honest">
     <b>把话说清楚:它保护到什么程度</b>
-    <span>代号是<b>可读假名</b>,保留行业特征便于自己阅读 —— 代价是特定行业内有可能被反推。
-      金额、方案、技术细节<b>不在脱敏范围</b>。要求任何字节都不出网,请把 BASE_URL 指向内网模型。</span>
+    <span>化名保留行业特征(示例银行 → sl银行),你自己好认 —— 代价是<b>同行可能猜出个大概</b>。
+      谈的金额和方案内容<b>仍要发给模型</b>,AI 才干得了活。公司要求全程不出网?可改接内网模型。</span>
   </div>
 
   <div class="band">

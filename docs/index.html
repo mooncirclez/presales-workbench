@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>售前工作台 · Presales Workbench</title>
-<meta name="description" content="售前工程师的本地 AI 工作台。客户档案落盘即代号化,真名只存本机一处;AI 可读范围是 permissions.deny 硬边界而非提示词约定 —— 在保住客户数据的前提下用公网大模型。">
+<meta name="description" content="售前工程师的本地 AI 工作台。客户一律化名,AI 不知道客户是谁;能看哪些资料由你逐项授权 —— 在保住客户数据的前提下用公网大模型。">
 <meta property="og:title" content="售前工作台 · Presales Workbench">
-<meta property="og:description" content="用得起公网大模型,又不把客户名字交出去。写入即代号化 + 可读范围硬隔离。">
+<meta property="og:description" content="用得起公网大模型,又不把客户名字交出去。AI 替你干活,客户是谁它从头到尾不知道。">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3d99'/><path d='M8 21V11h3.4l2.6 6 2.6-6H20v10h-2.4v-6.2L15.2 21h-2.4l-2.4-6.2V21z' fill='%23fff'/></svg>">
 <style>
@@ -122,6 +122,27 @@ h1 em{font-style:normal;color:var(--accent)}
 .stat b{display:block;font:700 25px/1.2 var(--mono);letter-spacing:-1px}
 .stat b small{font-size:14px;font-weight:600;letter-spacing:0;margin-left:2px}
 .stat span{display:block;font-size:12.5px;color:var(--muted);margin-top:5px}
+
+/* 化名演示条 */
+.maskdemo{margin:26px 0 0;background:var(--term-bg);border-radius:12px;
+  padding:22px 30px;display:flex;align-items:center;justify-content:center;
+  gap:36px;flex-wrap:wrap}
+.maskdemo .lb{font-size:11px;letter-spacing:1.8px;color:#6b7280;
+  text-transform:uppercase;margin-bottom:6px;font-weight:700;text-align:center}
+.maskdemo .v{font:600 18px/1.5 var(--mono);color:#e6e8ee;text-align:center}
+.maskdemo .v.hide{color:#4b515e;text-decoration:line-through}
+.maskdemo .v.on{color:#6ee7a8}
+.maskdemo .arw{color:#5c95ff;font-size:22px;font-weight:700}
+/* 折叠的技术细节 */
+details.tech{margin-top:26px;border:1px solid var(--line);border-radius:12px;
+  background:var(--card);overflow:hidden}
+details.tech summary{cursor:pointer;padding:15px 22px;font-weight:600;
+  font-size:14px;color:var(--muted);list-style:none}
+details.tech summary::before{content:"▸ ";color:var(--accent)}
+details.tech[open] summary::before{content:"▾ "}
+details.tech[open] summary{border-bottom:1px solid var(--line);color:var(--ink)}
+details.tech .rule{margin:14px 20px}
+details.tech>p{padding:0 22px 18px;font-size:13.5px;color:var(--muted)}
 
 /* ── 对照 ──────────────────────────────── */
 .vs{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -289,15 +310,14 @@ footer .r{text-align:right}
     <h1>用得起公网大模型,<br><em>又不把客户名字交出去</em></h1>
 
     <p class="lede">
-      给售前工程师的本地 AI 工作台。客户档案落盘那一刻<b>就已经是代号</b>,
-      真名只留在你机器上的一张映射表里 —— AI 读磁盘,天然只看得到
-      <code>sl银行</code>、<code>张sf</code>。
-      <b>不是靠提示词求它别看,是把工具层封死。</b>
+      给售前工程师的本地 AI 工作台。AI 替你写方案、整理纪要、盯项目,
+      但<b>客户是谁,它从头到尾不知道</b> —— 它看到的永远是化名。
+      能看哪些资料,也由你逐项授权:<b>没授权的不是「不该看」,是打不开。</b>
     </p>
 
     <div class="tags">
-      <span class="tag on">写入即代号化</span>
-      <span class="tag on">可读范围硬隔离</span>
+      <span class="tag on">客户一律化名</span>
+      <span class="tag on">AI 看什么,你授权</span>
       <span class="tag">MIT 开源</span>
       <span class="tag">macOS</span>
       <span class="tag">Python 标准库,零核心依赖</span>
@@ -315,7 +335,7 @@ footer .r{text-align:right}
 
     <div class="stats">
       <div class="stat"><b>1</b><span>处真名存放点</span></div>
-      <div class="stat"><b>127.0.0.1</b><span>服务唯一绑定</span></div>
+      <div class="stat"><b>100<small>%</small></b><span>档案存在本机</span></div>
       <div class="stat"><b>0</b><span>个核心依赖</span></div>
       <div class="stat"><b>1</b><span>条命令部署</span></div>
     </div>
@@ -329,64 +349,62 @@ footer .r{text-align:right}
       <div class="sec-no">01</div>
       <div>
         <h2>怎么在保住客户数据的前提下,用公网大模型</h2>
-        <p>售前手里是报价、决策链、组织架构。想用 AI 干活,又不能把这些原样发出去。
-           工作台的答案不是「相信模型」,是<b>四层机制,每层都不依赖模型自觉</b>。</p>
+        <p>售前手里是报价、决策链、组织架构 —— 想用 AI,又不敢把这些发出去。
+           工作台的答案一句话:<b>让 AI 替你干活,但客户是谁,它从头到尾不知道。</b></p>
       </div>
     </div>
 
-    <div class="rule">
-      <b>第 1 层 · 写入即代号化</b>
-      <p>客户名、客户方联系人、地址在<b>落盘那一刻</b>就换成假名 ——
-         磁盘上存的目录名就是 <code>sl银行</code>,纪要里写的是 <code>张sf</code>。
-         不是「明文存着、出口再过滤」,而是真名<b>只存在 <code>.mask/map.json</code> 一处</b>。
-         少一个明文副本,就少一条泄露路径;AI 读磁盘时天然只看得到代号。</p>
+    <div class="limits">
+      <div class="limit"><b>① 客户一律化名</b><span>档案存进电脑那一刻,客户名和联系人就换成了化名。
+        AI 看到的是「sl银行」,不知道那是谁 —— 真名只存在你机器上的一张对照表里,别处没有。</span></div>
+      <div class="limit"><b>② 看什么,由你授权</b><span>资料按目录逐项勾选放行。
+        没勾中的,AI 不是「答应不看」,是<b>打不开</b> —— 这是门锁,不是口头约定。</span></div>
+      <div class="limit"><b>③ 要害锁进保险柜</b><span>真名对照表、各家模型的密钥、回收站 ——
+        AI 一律进不去;密钥也永远不会明文外露。</span></div>
+      <div class="limit"><b>④ 档案不出你电脑</b><span>工作台在本机运行,不上传云端。
+        档案就是磁盘上的普通文件,哪天不用工作台了,资产原样还在。</span></div>
     </div>
 
-    <div class="rule">
-      <b>第 2 层 · 可读范围是硬边界,不是提示词</b>
-      <p>知识库按目录逐个勾选放通。没勾中的目录,AI <b>读不到</b> ——
-         用的是 CLI 的 <code>permissions.deny</code> 规则。
-         实测:它能盖过 <code>--permission-mode bypassPermissions</code>,
-         且封住 <code>Read</code> 会连带拦下该路径的 Grep / Glob。</p>
-      <p>两处踩过的坑已经堵上:<b>①</b> 只挡原文不够 ——
-         <code>knowledge/.extracted/</code> 存着同一批资料的提取全文,
-         漏掉它时实测 Grep 一把命中 180 个文件,等于锁了正门开了后门;
-         <b>②</b> 只 deny <code>Read</code> 时,模型会「讲原则」不用 <code>cat</code> 绕开 ——
-         但那是<b>模型自愿</b>。工作台支持切 DeepSeek / Kimi,换个模型完全可能直接绕。
-         要边界就得封到工具层,所以 <code>Bash</code> 默认一起封。</p>
-    </div>
-
-    <div class="rule">
-      <b>第 3 层 · 凭证与真名同等对待</b>
-      <p>映射表 <code>.mask/</code>、API key 与任务日志 <code>.workbench/</code>、
-         回收站 <code>.trash/</code> —— 三处一律对 AI 封读。
-         回收站单独封是因为:它躺的是<b>删除那一刻的原样副本</b>,
-         脱敏之前建的数据删掉后仍带真名,审计时实测有 4 个这类文件 AI 读得到。</p>
-      <p>第三方模型的 API key 存本机 <code>.workbench/providers.json</code>,
-         文件权限 <code>600</code>、已 gitignore,<b>任何接口响应只回脱敏值</b>
-         (<code>sk-abc…1234</code>),明文不出后端。</p>
-    </div>
-
-    <div class="rule">
-      <b>第 4 层 · 数据本来就没离开过这台机器</b>
-      <p>服务只绑 <code>127.0.0.1</code>,不对外暴露。客户档案是你磁盘上的
-         Markdown 和 JSON,可以 git、可以 grep、可以用任何编辑器打开。
-         工作台删了,资产还在。</p>
+    <div class="maskdemo">
+      <div><div class="lb">你录入</div><div class="v hide">示例银行 · 张三丰</div></div>
+      <div class="arw">→</div>
+      <div><div class="lb">AI 看到</div><div class="v on">sl银行 · 张sf</div></div>
     </div>
 
     <div class="note">
       <b>把话说清楚:它保护到什么程度</b>
-      <p>代号是<b>可读假名</b>,不是不可读编号 —— <code>示例银行 → sl银行</code>
-         保留了「是什么」,抹掉了「是谁」。这是为可读性做的取舍,
-         代价是<b>在特定行业里,<code>sl银行</code> 有可能被反推出来</b>。
-         需要更强保护就该用不可读编号,那会牺牲你自己看档案的效率。</p>
-      <p>另外:<b>商机金额、方案内容、技术细节不在脱敏范围内</b>,仍会随指令发给模型;
-         我方同事姓名不登记(映射表只收客户侧实体);导出不自动还原,
-         需要你拿替换清单做一次人工处理。</p>
-      <p>如果你的合规要求是「任何字节都不得出网」,那答案不是这个工作台,
-         而是本地私有化模型 —— 工作台支持配任意 Anthropic 兼容端点,
-         把 BASE_URL 指向你内网的模型服务即可。</p>
+      <p>化名保留了行业特征(示例银行 → sl银行),你自己好认 ——
+         代价是<b>同行有可能猜出个大概</b>。另外,谈的<b>金额和方案内容仍要发给模型</b>,
+         否则 AI 没法替你干活。如果公司要求「任何内容都不出网」,
+         工作台也支持改接你们内网的模型,其余一切照常用。</p>
     </div>
+
+    <details class="tech">
+      <summary>技术上怎么做到的 —— 给较真的同学</summary>
+      <p>以下每一条都是机制层的封禁,不依赖模型自觉;「实测」指用真实任务验证过。</p>
+      <div class="rule">
+        <b>化名:写入即替换,真名单点存放</b>
+        <p>客户名、客户方联系人、地址在<b>落盘那一刻</b>替换为假名,不做「明文存着、出口再过滤」。
+           真名只存在 <code>.mask/map.json</code> 一处 —— 少一个明文副本,就少一条泄露路径。</p>
+      </div>
+      <div class="rule">
+        <b>授权:permissions.deny 工具层封禁</b>
+        <p>逐目录生成 <code>Read(...)</code> 拒绝规则,实测能盖过
+           <code>--permission-mode bypassPermissions</code>,并连带拦下该路径的 Grep / Glob。
+           提取全文 <code>.extracted/</code> 与编译产物 wiki 同步封禁 —— 只挡原文等于锁了正门开着后门;
+           <code>Bash</code> 默认一并封,防止换个模型直接 <code>cat</code> 绕过。</p>
+      </div>
+      <div class="rule">
+        <b>要害:三处目录整体对 AI 封读</b>
+        <p><code>.mask/</code>(对照表)、<code>.workbench/</code>(密钥与任务日志)、
+           <code>.trash/</code>(回收站,躺着删除那一刻的原样副本)。
+           密钥文件权限 <code>600</code>,任何接口响应只回脱敏值。</p>
+      </div>
+      <div class="rule">
+        <b>本机:服务只绑 127.0.0.1</b>
+        <p>不对外暴露端口;写操作限制在数据区,路径穿越被拒;删除进回收站可恢复。</p>
+      </div>
+    </details>
   </div>
 </section>
 
