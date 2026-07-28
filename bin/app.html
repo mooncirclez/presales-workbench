@@ -69,6 +69,11 @@ border:1px solid transparent}
 .tag.y{color:var(--warn);background:var(--warn-bg)}
 .tag.r{color:var(--bad);background:var(--bad-bg)}
 .tag.o{color:var(--muted);border-color:var(--line);background:transparent}
+/* 中断/超时:橙底描边,和「完成」拉开距离,一眼看出没干成 */
+.tag.w{color:var(--warn);background:var(--warn-bg);border-color:var(--warn)}
+.tag.lnk{cursor:pointer;font:inherit;font-size:11px}
+.tag.lnk:hover{color:var(--accent);border-color:var(--accent)}
+.jmeta{white-space:nowrap;font-family:var(--mono);font-size:11px}
 .ext{font:600 9.5px var(--mono);border:1px solid var(--line);border-radius:4px;
 padding:1px 5px;color:var(--muted);letter-spacing:.5px;flex:none}
 .prog{height:4px;background:var(--chip);border-radius:3px;overflow:hidden;margin-top:9px}
@@ -420,18 +425,19 @@ function mEditCust(id){const m=custMeta(id);
     <div class="row"><label>客户等级</label><select id="c_lv">${LEVELS.map(l=>
       `<option ${l===(m.level||"重点")?"selected":""}>${l}</option>`).join("")}</select></div>
   </div>
-  <div class="cols">
-    <div class="row"><label>对接销售</label><input id="c_sales" value="${attr(m.sales||"")}"
-      placeholder="负责该客户的销售姓名"></div>
-    <div class="row"><label>地址</label><input id="c_addr" value="${attr(m.address||"")}"></div>
-  </div>
-  <div class="row"><label>官网 / 备注</label><input id="c_web" value="${attr(m.website||"")}"></div>
+  <div class="row"><label>对接销售</label><input id="c_sales" value="${attr(m.sales||"")}"
+    placeholder="负责该客户的销售姓名(我方,不脱敏)"></div>
+  <div class="row"><label>客户简称 / 别名</label><input id="c_alias" placeholder="示例行,示例银行,SYB">
+    <div class="small muted" style="margin-top:4px">写进映射表当替换词,<b>不存进档案、不回显</b>。
+      纪要里写简称时才认得出来 —— 不填的话简称会明文落盘。</div></div>
   <div class="btns"><button onclick="closeModal()">取消</button>
   <button class="pri" onclick="doEditCust('${attr(id)}')">保存</button></div>`);}
 async function doEditCust(id){try{const m=custMeta(id);
   m.full_name=$("#c_full").value;m.industry=$("#c_ind").value;m.level=$("#c_lv").value;
-  m.sales=$("#c_sales").value;m.address=$("#c_addr").value;m.website=$("#c_web").value;
-  closeModal();await saveCustMeta(id,m);toast("已保存");}catch(e){toast(e.message);}}
+  m.sales=$("#c_sales").value;
+  const al=$("#c_alias").value.trim();if(al)m.aliases=al;   // 只写通道,后端入表后即丢弃
+  closeModal();await saveCustMeta(id,m);
+  toast(al?"已保存,别名已入映射表":"已保存");}catch(e){toast(e.message);}}
 
 function mContact(id,idx){const m=custMeta(id);
   const c=idx>=0?m.contacts[idx]:{name:"",title:"",role:"其他",phone:"",wechat:"",note:""};
@@ -443,19 +449,15 @@ function mContact(id,idx){const m=custMeta(id);
   <div class="cols">
     <div class="row"><label>角色</label><select id="p_role">${ROLES.map(r=>
       `<option ${r===c.role?"selected":""}>${r}</option>`).join("")}</select></div>
-    <div class="row"><label>电话</label><input id="p_phone" value="${attr(c.phone||"")}"></div>
   </div>
-  <div class="cols">
-    <div class="row"><label>微信 / 邮箱</label><input id="p_wechat" value="${attr(c.wechat||"")}"></div>
-    <div class="row"><label>备注(态度/影响力)</label><input id="p_note" value="${attr(c.note||"")}"></div>
-  </div>
+  <div class="row"><label>备注(态度/影响力)</label><input id="p_note" value="${attr(c.note||"")}"></div>
   <div class="btns">${idx>=0?`<button class="danger left" onclick="delContact('${attr(id)}',${idx})">删除</button>`:""}
   <button onclick="closeModal()">取消</button>
   <button class="pri" onclick="doContact('${attr(id)}',${idx})">保存</button></div>`);
   $("#p_name").focus();}
 async function doContact(id,idx){try{const m=custMeta(id);
   const c={name:$("#p_name").value.trim(),title:$("#p_title").value,role:$("#p_role").value,
-    phone:$("#p_phone").value,wechat:$("#p_wechat").value,note:$("#p_note").value};
+    note:$("#p_note").value};
   if(!c.name)return toast("姓名不能为空");
   if(idx>=0)m.contacts[idx]=c;else m.contacts.push(c);
   closeModal();await saveCustMeta(id,m);toast("已保存");}catch(e){toast(e.message);}}
@@ -591,8 +593,8 @@ function paintJobFilter(){
       onkeydown="if(event.key==='Enter')jfSet('q',this.value)">
     <select onchange="jfSet('status',this.value)">
       <option value="">全部状态</option>
-      ${[["done","完成"],["failed","失败"],["running","运行中"]].map(([v,t])=>
-        `<option value="${v}" ${JF.status===v?"selected":""}>${t}</option>`).join("")}
+      ${Object.entries(m.states||{done:"完成",failed:"失败"}).concat([["running","运行中"]])
+        .map(([v,t])=>`<option value="${v}" ${JF.status===v?"selected":""}>${t}</option>`).join("")}
     </select>
     <input type="date" value="${attr(JF.since)}" title="只看该日期之后"
       onchange="jfSet('since',this.value)" style="width:140px">
@@ -620,6 +622,8 @@ function paintSide(){
     `<span class="dot ${c.available?"ok":"bad"}"></span>claude ${c.available?"可用":"未登录"}<br>`+
     mcpTxt+`<br><span class="dot ok"></span>${esc(S.pack.id)}@${esc(S.pack.version)}`+
     `<br><a class="f" href="#/trash" style="font-size:11px">回收站</a>`+
+    `<span class="muted" style="font-size:11px"> · </span>`+
+    `<a class="f" href="#/mask" style="font-size:11px">映射表</a>`+
     (S.config.version?`<span class="muted" style="font-size:11px"> · 工作台 v${esc(S.config.version)}</span>`:"");
   document.querySelectorAll("#side a").forEach(a=>{
     const r=a.dataset.r,h=location.hash||"#/";
@@ -846,15 +850,22 @@ function vCustomers(){
       <td><span class="tag o">${esc(m.level||"—")}</span></td>
       <td class="small">${esc(m.sales||"—")}</td>
       <td>${esc(dm||"—")}</td>
-      <td class="num">${c.meetings.length}</td><td class="num">${np}</td>
-      <td class="small muted">${esc(m.address||"—")}</td></tr>`;}).join("");
+      <td class="num">${c.meetings.length}</td><td class="num">${np}</td></tr>`;}).join("");
   return `<h2>客户</h2><div class="sub">结构化档案(customer.json)+ 叙事档案(profile.md)+ 纪要</div>
   <div class="bar"><button class="pri" onclick="mCustomer()">新建客户</button>
   <span class="sp"></span><button class="sm" onclick="openLocal('customers')">在 Finder 打开</button></div>
   ${rows?`<div class="card" style="padding:6px 14px"><table class="t">
-    <tr><th>客户</th><th>等级</th><th>销售</th><th>决策人</th><th>纪要</th><th>项目</th><th>地址</th></tr>
+    <tr><th>客户</th><th>等级</th><th>销售</th><th>决策人</th><th>纪要</th><th>项目</th></tr>
     ${rows}</table></div>`:
-   `<div class="empty">还没有客户档案<br><br><button class="pri" onclick="mCustomer()">新建第一个客户</button></div>`}`;}
+   `<div class="empty">还没有客户档案<br><br><button class="pri" onclick="mCustomer()">新建第一个客户</button></div>`}
+  ${(S.archived_customers||[]).length?`<div class="sec" style="margin-top:18px">已归档客户
+    <span class="tag o">${S.archived_customers.length}</span></div>
+  <div class="card" style="padding:6px 14px 10px"><table class="t">
+    ${S.archived_customers.map(a=>`<tr>
+      <td><b>${esc(a.id)}</b><div class="small muted">${esc((a.meta||{}).industry||"")}</div></td>
+      <td class="small muted">${esc((a.meta||{}).full_name||"")}</td>
+      <td style="text-align:right"><button class="sm" onclick="restoreCustomer('${attr(a.id)}')">恢复</button></td>
+    </tr>`).join("")}</table></div>`:""}`;}
 
 function vCustomer(id){
   const c=S.customers.find(x=>x.id===id);
@@ -864,15 +875,13 @@ function vCustomer(id){
   const conRows=cons.map((p,i)=>`<tr class="rowclick" onclick="mContact('${attr(id)}',${i})">
     <td><b>${esc(p.name)}</b></td><td>${esc(p.title||"—")}</td>
     <td>${p.role==="决策人"?`<span class="tag b">决策人</span>`:`<span class="tag o">${esc(p.role||"—")}</span>`}</td>
-    <td class="mono">${esc(p.phone||"—")}</td><td class="mono">${esc(p.wechat||"—")}</td>
     <td class="small muted">${esc(p.note||"")}</td></tr>`).join("");
   const kpiRows=kpis.map((k,i)=>`<tr class="rowclick" onclick="mKpi('${attr(id)}',${i})">
     <td><b>${esc(k.name)}</b></td><td>${esc(k.target||"—")}</td>
     <td>${esc(k.current||"—")}</td><td class="small muted">${esc(k.note||"")}</td></tr>`).join("");
   return `<h2>${esc(id)} <span class="tag o">${esc(m.level||"—")}</span></h2>
   <div class="sub">${esc(m.full_name||"")}${m.industry?" · "+esc(m.industry):""}
-   ${m.sales?" · 销售:"+esc(m.sales):""}
-   ${m.address?" · "+esc(m.address):""}${m.website?" · "+esc(m.website):""}</div>
+   ${m.sales?" · 销售:"+esc(m.sales):""}</div>
   <div class="bar">
     <button class="pri" onclick="mEditCust('${attr(id)}')">编辑信息</button>
     ${c.profile?`<a class="f" href="${edLink(c.profile)}"><button>叙事档案</button></a>`:""}
@@ -880,12 +889,13 @@ function vCustomer(id){
     <button class="sm" onclick="mAI('整理客户情报:${attr(id)}',
       '阅读 customers/${attr(id)}/ 下的 customer.json、profile.md 与全部会议纪要,提炼:1) 干系人与态度变化(同步维护 customer.json 的 contacts,保持 JSON 合法) 2) 痛点与诉求 3) 客户KPI(维护 kpis 字段) 4) 建议下一步。narrative 更新到 profile.md 对应章节,缺信息留【待补充】。完成后输出三行内摘要。')">AI 整理情报</button>
     <span class="sp"></span>
+    <button class="sm" onclick="archiveCustomer('${attr(id)}')" title="客户名下的项目必须先全部归档或删除">归档客户</button>
     <button class="sm" onclick="openLocal('customers/${attr(id)}')">在 Finder 打开</button>
     ${delBtn(`delCustomer('${attr(id)}')`,"删除客户")}
   </div>
   <div class="sec">决策链与联系人</div>
   <div class="card" style="padding:6px 14px 10px">
-    ${conRows?`<table class="t"><tr><th>姓名</th><th>部门/职务</th><th>角色</th><th>电话</th><th>微信/邮箱</th><th>备注</th></tr>${conRows}</table>`:
+    ${conRows?`<table class="t"><tr><th>姓名</th><th>部门/职务</th><th>角色</th><th>备注</th></tr>${conRows}</table>`:
       `<div class="empty">暂无联系人 — 决策人、技术把关、内线都记在这里</div>`}
     <div style="margin-top:8px"><button class="sm" onclick="mContact('${attr(id)}',-1)">添加联系人</button></div>
   </div>
@@ -920,7 +930,8 @@ function vCustomer(id){
 function vProjects(){
   const rows=S.projects.map(p=>{const m=p.meta;
     return `<tr class="rowclick" onclick="location.hash='#/project/${encodeURIComponent(p.dir)}'">
-    <td><b>${esc(m.name||p.dir)}</b><div class="small muted">${esc(m.customer||"")}</div></td>
+    <td><b>${esc(m.name||p.dir)}</b><div class="small muted">${esc(m.customer||"")}${
+      (S.orphans||[]).some(o=>o.dir===p.dir)?` <span class="tag y" title="该客户已被删除,项目成了孤儿">客户已不存在</span>`:""}</div></td>
     <td><span class="tag o">${esc(m.stage||"?")}</span></td>
     <td class="num">${fmtWan(m.budget_wan)}</td>
     <td class="num">${fmtWan(m.contract_wan)}</td>
@@ -1100,6 +1111,168 @@ async function doDelete(path,kind){try{
   toast("已移入回收站,可在侧栏「回收站」恢复",3500);}catch(e){toast(e.message,5000);}}
 /* 回收站 */
 let TRASH=[];
+/* ---------- 映射表:全站唯一显示客户真名的页面 ---------- */
+let MASKTSV="",MASKROWS=[];
+async function vMask(){
+  let d;try{d=await api("/api/mask-table");}catch(e){return `<div class="empty">读取失败:${esc(e.message)}</div>`;}
+  MASKTSV=d.tsv||"";
+  const kindName={customer:"客户机构",contact:"客户方人员",vendor:"厂商 / 竞品",
+    address:"地址",website:"网址",phone:"电话",email:"邮箱",misc:"其他"};
+  MASKROWS=d.rows||[];
+  const rows=MASKROWS.map((r,i)=>`<tr class="rowclick" onclick="mMaskEntry(${i})">
+    <td class="mono"><b>${esc(r.code)}</b></td>
+    <td>${esc(r.real)}</td>
+    <td><span class="tag o">${esc(kindName[r.kind]||r.kind)}</span></td>
+    <td class="small muted">${r.aliases.length?esc(r.aliases.join("、")):
+      `<span style="color:var(--warn)">未补别名</span>`}</td>
+    <td style="text-align:right;white-space:nowrap">${delBtn(
+      `event.stopPropagation();delMaskEntry('${attr(r.code)}','${attr(r.real)}')`,
+      "删除这条映射")}</td></tr>`).join("");
+  return `<h2>映射表</h2>
+  <div class="sub">假名 ↔ 真名对照 · 共 ${d.total} 条 · 存在 <span class="mono">${esc(d.map_file)}</span></div>
+  <div class="card" style="border-left:2px solid var(--warn);background:var(--warn-bg);margin-bottom:14px">
+    <b>这是工作台里唯一会显示客户真名的页面。</b>
+    <div class="small" style="margin-top:6px;line-height:1.8">
+      · 其余所有页面、导出的文件、发给 AI 的内容,一律只有假名<br>
+      · 这张表<b>不进版本库、不发给 AI</b>(已在 AI 权限里硬性拒绝读取)<br>
+      · 每次改动前自动备份到 <span class="mono">.mask/backups/</span>,保留最近 60 份<br>
+      · <b>弄丢它,已存的数据就永久匿名了</b> —— 换电脑记得一起带走</div>
+  </div>
+  <div class="bar">
+    <button class="pri" onclick="mMaskEntry(-1)">登记新条目</button>
+    <button onclick="copyMaskTsv()">复制对照表</button>
+    <span class="small muted">点表格任意一行可改别名 / 改类型 / 删除。
+      复制出来的对照表已按长度排好序,人工替换<b>务必从长到短</b>。</span>
+  </div>
+  ${rows?`<div class="card" style="padding:6px 14px 10px"><table class="t">
+    <tr><th>假名(界面/文件里看到的)</th><th>真名</th><th>类型</th><th>别名 / 简称</th><th></th></tr>
+    ${rows}</table></div>`
+   :`<div class="empty">映射表还是空的 —— 新建一个客户就会自动登记</div>`}
+  <div class="sec" style="margin-top:18px">关于别名</div>
+  <div class="card small" style="line-height:1.9">
+    纪要里写简称(比如把「示例银行」写成「示例行」)时,系统只认<b>登记过的写法</b> ——
+    <b>没补别名的简称会明文落盘</b>,这是目前最容易漏的一处。上表里标黄的行都还没补。<br>
+    <span class="muted">客户建档时也可以在「编辑信息 → 客户简称 / 别名」里填,和这里等效。</span>
+  </div>`;}
+
+/* 补录 / 编辑一条映射。idx=-1 为新增 */
+const MASKKINDS=[["customer","客户机构"],["contact","客户方人员"],
+  ["vendor","厂商 / 竞品"],["misc","其他"]];
+function mMaskEntry(idx){
+  const r=idx>=0?MASKROWS[idx]:null;
+  modal(`<h3>${r?"编辑映射 · "+esc(r.code):"登记新条目"}</h3>
+  ${r?`<p class="small muted">文件与界面里显示的假名:<b class="mono">${esc(r.code)}</b>
+     —— 假名一旦生成就不再变,否则已落盘的内容会对不上。</p>`
+    :`<p class="small muted">填真名,系统自动生成可读假名(示例银行 → sl银行、张三丰 → 张sf)。
+     适合登记<b>不是客户、但也不该外发的名字</b>,比如竞品厂商。</p>`}
+  <div class="row"><label>真名</label>
+    <input id="mk_real" value="${attr(r?r.real:"")}" placeholder="如:示例银行"></div>
+  <div class="row"><label>类型</label><select id="mk_kind">${MASKKINDS.map(([v,n])=>
+    `<option value="${v}" ${r&&r.kind===v?"selected":""}>${n}</option>`).join("")}</select></div>
+  <div class="row"><label>别名 / 简称</label>
+    <input id="mk_alias" value="${attr(r?r.aliases.join("、"):"")}"
+      placeholder="示例行,示例银行,SYB">
+    <div class="small muted" style="margin-top:4px">纪要里你实际会写的那些写法,全填进来</div></div>
+  <div class="btns">
+    <button onclick="closeModal()">取消</button>
+    <button class="pri" onclick="doMaskEntry(${idx})">保存</button></div>`);
+  setTimeout(()=>{const el=$(r?"#mk_alias":"#mk_real");if(el)el.focus();},50);}
+
+async function doMaskEntry(idx){
+  const real=$("#mk_real").value.trim(),kind=$("#mk_kind").value,
+        aliases=$("#mk_alias").value.trim();
+  if(!real)return toast("真名不能为空");
+  try{
+    const r=idx>=0?MASKROWS[idx]:null;
+    const res=await api("/api/mask-entry",r
+      ?{op:"update",code:r.code,real:real,kind:kind,aliases:aliases}
+      :{op:"add",real:real,kind:kind,aliases:aliases});
+    closeModal();route();
+    toast(r?"已更新":`已登记 ${real} → ${res.code}`);
+  }catch(e){toast(e.message,4000);}}
+
+async function delMaskEntry(code,real){
+  modal(`<h3>删除映射 · ${esc(code)}</h3>
+  <div class="card" style="border-left:2px solid var(--bad);background:var(--bad-bg);padding:12px 14px">
+    <b class="small">这一步不可逆。</b>
+    <div class="small" style="margin-top:5px;line-height:1.8">
+      已经存盘的纪要、交付物、伴生文本里<b>还留着 <span class="mono">${esc(code)}</span></b>。
+      删掉映射之后,再也查不出它原本是「${esc(real)}」了。<br>
+      只有当这个名字<b>本来就不该脱敏</b>(比如我方产品、我方同事)时才删。</div>
+  </div>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="danger" onclick="doDelMaskEntry('${attr(code)}')">确认删除</button></div>`);}
+
+async function doDelMaskEntry(code){
+  try{const r=await api("/api/mask-entry",{op:"delete",code:code});
+    closeModal();route();toast(`已删除:${r.removed}`);}
+  catch(e){toast(e.message,4000);}}
+
+/* ---------- AI 可读范围:知识库白名单 + Bash 开关 ---------- */
+let MASKCFG=null;
+async function loadMaskCfg(){try{MASKCFG=await api("/api/mask-config");}catch(e){MASKCFG=null;}return MASKCFG;}
+
+async function paintKbWhitelist(){
+  const box=$("#kbWhitelist");if(!box)return;
+  const d=await loadMaskCfg();
+  if(!d){box.innerHTML=`<div class="small muted">AI 可读范围:读取失败</div>`;return;}
+  const wl=new Set(d.whitelist||[]),md=new Set(d.mask_dirs||[]);
+  const rows=(d.subdirs||[]).map(n=>`<tr>
+    <td>${esc(n)}</td>
+    <td style="text-align:center"><input type="checkbox" style="width:auto"
+      ${wl.has(n)?"checked":""} onchange="toggleKb('${attr(n)}',this.checked)"></td>
+    <td style="text-align:center"><input type="checkbox" style="width:auto"
+      ${md.has(n)?"checked":""} onchange="toggleMaskDir('${attr(n)}',this.checked)"></td>
+  </tr>`).join("");
+  const tot=(d.subdirs||[]).length;
+  box.innerHTML=`<b class="small">知识库策略</b>
+    <span class="tag ${wl.size?"y":"o"}" style="margin-left:6px">AI 可读 ${wl.size}/${tot}</span>
+    <span class="tag ${md.size?"y":"o"}">提取脱敏 ${md.size}/${tot}</span>
+    ${rows?`<table class="t" style="margin:9px 0 6px">
+      <tr><th>子目录</th><th style="width:110px;text-align:center">AI 可读</th>
+        <th style="width:110px;text-align:center">提取时脱敏</th></tr>${rows}</table>`
+     :`<div class="small muted" style="margin:9px 0">知识库还没有子目录</div>`}
+    <div class="small muted" style="line-height:1.8">
+      两列<b>互相独立,都由你决定,程序不推断</b>:<br>
+      · <b>AI 可读</b> —— 未勾的目录连同其提取文本被硬性拒绝(不是靠提示词约定)<br>
+      · <b>提取时脱敏</b> —— 勾中的目录,提取文本里出现的名字<b>按映射表</b>换成假名;
+        表里没有的一律不动。公开发表过的材料不必勾。<br>
+      改完立刻生效;<b>但已提取的文本不会自动重跑</b>,改了要点「全量提取」。</div>`;}
+
+async function toggleMaskDir(name,on){
+  const md=new Set((MASKCFG&&MASKCFG.mask_dirs)||[]);
+  on?md.add(name):md.delete(name);
+  try{await api("/api/mask-config",{mask_dirs:[...md]});MASKCFG=null;
+    await paintKbWhitelist();
+    toast(on?`「${name}」提取时将脱敏 — 需点「全量提取」才对已有文本生效`:`「${name}」提取时不再脱敏`);}
+  catch(e){toast(e.message);await paintKbWhitelist();}}
+
+async function toggleKb(name,on){
+  const wl=new Set((MASKCFG&&MASKCFG.whitelist)||[]);
+  on?wl.add(name):wl.delete(name);
+  try{await api("/api/mask-config",{whitelist:[...wl]});MASKCFG=null;
+    await paintKbWhitelist();toast(on?`已放通「${name}」`:`已收回「${name}」`);}
+  catch(e){toast(e.message);await paintKbWhitelist();}}
+
+async function paintBashToggle(){
+  const cb=$("#aiBash");if(!cb)return;
+  const d=await loadMaskCfg();if(!d)return;
+  cb.checked=!!d.allow_bash;
+  const w=$("#bashWarn");
+  if(w)w.innerHTML=d.allow_bash?`<p class="small" style="color:var(--warn);margin:0 0 8px">
+    已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b>(那些内容改不掉)。
+    生成 xlsx 之类的任务需要它,用完建议关掉。</p>`:"";}
+
+async function setAllowBash(on){
+  try{await api("/api/mask-config",{allow_bash:on});MASKCFG=null;await paintBashToggle();
+    toast(on?"已允许 Bash — 二进制原件重新可达":"已禁用 Bash");}
+  catch(e){toast(e.message);await paintBashToggle();}}
+
+function copyMaskTsv(){
+  if(!MASKTSV)return toast("表是空的");
+  navigator.clipboard.writeText(MASKTSV).then(()=>toast("已复制,可直接粘进 Excel"))
+    .catch(()=>toast("复制失败,请手动选中表格"));}
+
 async function vTrash(){
   try{TRASH=(await api("/api/trash")).items;}catch(e){TRASH=[];}
   const kindName={customer:"客户",project:"项目",meeting:"纪要",scenario:"场景",
@@ -1342,6 +1515,37 @@ function selToggle(p,box){if(box.checked)DOCSEL.add(p);else DOCSEL.delete(p);
   const c=$("#selcount");if(c)c.textContent=n;}
 const projLabel=dir=>(dir||"").replace(/^.*?-/,"")||dir;
 /* 红色垃圾桶删除按钮:onclick 传入调用串 */
+/* 归档客户:名下项目必须先清空 —— 后端也会挡一道,这里先给出可读的提示 */
+async function archiveCustomer(id){
+  const act=S.projects.filter(p=>(p.meta||{}).customer===id);
+  if(act.length){
+    return modal(`<h3>无法归档 · ${esc(id)}</h3>
+    <div class="card" style="border-left:2px solid var(--warn);background:var(--warn-bg);padding:12px 14px">
+      <b class="small">名下还有 ${act.length} 个进行中的项目。</b>
+      <div class="small" style="margin-top:5px;line-height:1.8">
+        先把它们逐个归档或删除,再回来归档客户 ——
+        否则项目会挂着一个不存在的客户,看板统计和下钻都会错。</div>
+    </div>
+    <ul class="plain small" style="margin-top:10px">${act.map(p=>
+      `<li><a class="f" href="#/project/${encodeURIComponent(p.dir)}">${esc((p.meta||{}).name||p.dir)}</a></li>`).join("")}</ul>
+    <div class="btns"><button class="pri" onclick="closeModal()">知道了</button></div>`);}
+  modal(`<h3>归档客户 · ${esc(id)}</h3>
+  <p class="small">档案会移到 <span class="mono">archive/_customers/</span>,不再出现在客户列表里。
+    <b>随时可以恢复</b>,纪要与历史都跟着走。</p>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="pri" onclick="doArchiveCustomer('${attr(id)}')">归档</button></div>`);}
+
+async function doArchiveCustomer(id){
+  try{const r=await api("/api/archive-customer",{customer:id});
+    closeModal();await refresh();location.hash="#/customers";
+    toast(`已归档 ${id}${r.archived_projects?`(含 ${r.archived_projects} 个已归档项目)`:""}`);}
+  catch(e){toast(e.message,5000);}}
+
+async function restoreCustomer(id){
+  try{await api("/api/restore-customer",{customer:id});
+    await refresh();route();toast("已恢复到客户列表");}
+  catch(e){toast(e.message,5000);}}
+
 function delBtn(onclick,title){
   return `<button class="del" title="${attr(title||"删除")}" onclick="${onclick}">`+
     `<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>`+
@@ -1598,6 +1802,8 @@ function vKnowledge(){
   const X=S.extract||{};
   const pct=X.binary_docs?Math.round(X.extracted*100/X.binary_docs):0;
   return `<h2>知识库</h2><div class="sub">把资料放进 knowledge/my local knowledge/,支持自建任意子文件夹 · 搜索覆盖 客户 / 项目 / 知识 / 收件箱</div>
+  <div id="kbWhitelist" class="card" style="margin-bottom:12px">
+    <div class="small muted">AI 可读范围 — 加载中…</div></div>
   <div class="card kbar">
     <b class="small">知识编译</b>
     <span class="small muted">已提取 <b class="num">${X.extracted||0}/${X.binary_docs||0}</b>
@@ -1606,6 +1812,7 @@ function vKnowledge(){
     ${X.failed?`<a class="f small" onclick="mExtractDetail()">${X.failed} 份需 OCR ›</a>`:
       `<span class="tag g">全部可读</span>`}
     <span class="sp"></span>
+    <button class="sm" onclick="mFullExtract()" title="忽略增量缓存,把所有文档重新提取一遍">全量提取</button>
     <button class="sm" onclick="doExtract(false)">提取新增</button>
     <button class="sm pri" onclick="mWikiCompile()">编译 wiki</button>
     ${X.wiki_index?`<a class="f" href="${edLink("knowledge/wiki/index.md")}"><button class="sm">wiki 索引</button></a>`:""}
@@ -1637,6 +1844,26 @@ async function doExtract(all){try{
   await api("/api/extract",{all:!!all});
   toast(all?"全量提取已开始(百余份文档需数分钟),可在「AI 任务」页看进度":"增量提取已开始");
   startPoll();}catch(e){toast(e.message);}}
+/* 全量提取:重整目录后必须跑,否则旧提取文本会挂在已不存在的路径上 */
+function mFullExtract(){
+  const X=S.extract||{};
+  modal(`<h3>全量提取</h3>
+  <p class="small">忽略增量缓存,把 <b>${X.binary_docs||0}</b> 份文档全部重新提取一遍。
+    百余份大约需要几分钟,过程在后台跑,可以关掉这个窗口。</p>
+  <div class="card small" style="line-height:1.9;margin-top:8px">
+    <b>什么时候该用:</b><br>
+    · 重新整理了知识库的文件夹结构(增量提取按文件哈希判断,认不出目录搬迁)<br>
+    · 映射表加了新的客户名或别名 —— <b>旧的提取文本是按当时的映射脱敏的,不会自动更新</b><br>
+    · 怀疑提取文本和原文对不上
+  </div>
+  <div class="card small" style="margin-top:8px;border-left:2px solid var(--warn);background:var(--warn-bg)">
+    重新提取会<b>覆盖</b> <span class="mono">knowledge/.extracted/</span> 下的全部内容。
+    那里都是自动生成的,没有你手写的东西,覆盖是安全的。<br>
+    但<b>旧目录结构留下的孤儿提取文件不会被自动清掉</b> —— 需要的话去 Finder 里删。
+  </div>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="pri" onclick="closeModal();doExtract(true)">开始全量提取</button></div>`);}
+
 function mWikiCompile(){
   const X=S.extract||{};
   if(!X.extracted)return toast("请先「提取新增文档」,wiki 编译需要提取后的文本");
@@ -1644,7 +1871,7 @@ function mWikiCompile(){
   <p class="small muted">按主题域把提取的资料编译成互链知识页(概念页 + [[双向链接]] + 索引),
   写入 <span class="mono">knowledge/wiki/</span>。一次编译一个主题效果最好。</p>
   <div class="row"><label>主题域</label><input id="wk_topic" list="wktopics"
-    placeholder="如:ITIL / SRE稳定性 / 信创与云合规 / 竞品分析">
+    placeholder="如:ITIL / SRE稳定性 / 信创与云合规 / 竞品-竞品分析">
     <datalist id="wktopics">
       <option>ITIL 与 ITSM</option><option>SRE 与稳定性保障</option>
       <option>DevOps 能力成熟度</option><option>信创与金融云合规</option>
@@ -2277,8 +2504,13 @@ function vAI(){
           `<option value="${attr(m)}" ${m===S.claude.permission_mode?"selected":""}>${
             m==="bypassPermissions"?"全部放行(推荐)":m==="acceptEdits"?"仅文件编辑":"只规划不动手"}</option>`).join("")}
       </select>
+      <span class="sp"></span>
+      <label class="small muted" title="关闭时 AI 拿不到 Bash,因而无法用 python-docx/cat 直读二进制文档里的真名">
+        <input type="checkbox" id="aiBash" onchange="setAllowBash(this.checked)"
+          style="width:auto;vertical-align:-1px"> 允许 Bash</label>
       <button class="sm" onclick="api('/api/open-claude',{}).then(()=>toast('已打开 Claude App'))
         .catch(e=>toast(e.message,4000))">打开 Claude App</button></div>
+    <div id="bashWarn"></div>
     ${S.claude.permission_mode==="acceptEdits"?`<p class="small" style="color:var(--warn);margin:0 0 8px">
       当前「仅文件编辑」:AI 执行命令(如生成 xlsx/pptx、跑脚本)会被拒绝且不会提示你批准 —— 后台任务无法中途弹窗。
       需要它完整干活请切到「全部放行」。</p>`:""}
@@ -2557,7 +2789,7 @@ function paintChat(){
     rows.push(`<div class="msg me"><div class="bub">${esc(t.prompt||"")}</div>
       <div class="mmeta">${esc((t.created||"").slice(11,16))}</div></div>`);
     const run=t.status==="queued"||t.status==="running";
-    const bad=t.status==="failed";
+    const bad=t.status==="failed"||t.status==="blocked"||t.status==="timeout";
     const body=run?`<span class="spin"></span>${t.status==="queued"?"排队中…":"正在干活…"}`
       :bad?esc(t.output||"失败"):md(t.output||"(无输出)");
     const arts=(t.artifacts||[]).map(a=>{
@@ -2568,8 +2800,14 @@ function paintChat(){
       ${arts?`<div class="arts">📎 产出:${arts}</div>`:""}
       ${t.hint?`<div class="small" style="color:var(--bad);margin-top:5px">${esc(t.hint)}</div>`:""}
       ${t.note?`<div class="small" style="color:var(--warn);margin-top:5px">${esc(t.note)}</div>`:""}
+      ${t.stop_detail?`<div class="small" style="color:var(--warn);margin-top:5px">
+        ⏸ ${esc(t.stop_detail)}</div>`:""}
+      ${bad&&t.prompt?`<div style="margin-top:6px">
+        <button class="sm pri" onclick="retryJob('${attr(t.id)}')">重试这一轮</button></div>`:""}
       <div class="mmeta">${t.resumed?"↩ 续上文 · ":""}${esc(t.provider||"")}
         ${t.model&&t.model!=="默认"?"· "+esc(t.model):""}
+        ${t.duration_ms?"· ⏱ "+fmtDur(t.duration_ms):""}
+        ${(t.tok_in||t.tok_out)?`· ↑${fmtTok(t.tok_in)} ↓${fmtTok(t.tok_out)}`:""}
         ${t.cost_usd?"· $"+Number(t.cost_usd).toFixed(4):""}</div></div>`);}
   if(CHAT.pending)
     rows.push(`<div class="msg me"><div class="bub">${esc(CHAT.pending.shown)}</div>
@@ -2578,26 +2816,73 @@ function paintChat(){
   el.innerHTML=rows.length?rows.join("")
     :`<div class="empty small">还没有对话 —— 下面说一句话就行。产出会直接写进工作台文件。</div>`;
   el.scrollTop=el.scrollHeight;}
+/* 任务状态标签。blocked = 跑完了但没干成(被权限拦下 / 撞上限),
+   以前这类一律记成「完成」,列表上看着没事、点开才发现它在求授权。 */
+function jobChip(j){
+  const m={done:["g","完成"],blocked:["w","中断"],timeout:["w","超时"],failed:["r","失败"]}[j.status];
+  if(m)return `<span class="tag ${m[0]}"${j.stop_detail?` title="${attr(j.stop_detail)}"`:""}>${m[1]}</span>`;
+  return `<span class="tag y"><span class="spin"></span>${j.status==="queued"?"排队":"运行中"}</span>`;}
+
+function fmtDur(ms){
+  if(!ms)return "";
+  if(ms<1000)return ms+"ms";
+  if(ms<60000)return (ms/1000).toFixed(1)+"s";
+  const m=Math.floor(ms/60000);return m+"分"+Math.round((ms%60000)/1000)+"秒";}
+function fmtTok(n){
+  if(!n)return "0";
+  return n>=1000?(n/1000).toFixed(n>=10000?0:1)+"k":String(n);}
+
+/* 耗时 / token / 花费:三个都有才排得下,没有的自动省略(如文档提取只有耗时) */
+function jobMeta(j){
+  const bits=[];
+  if(j.duration_ms)bits.push(`<span title="耗时">⏱ ${fmtDur(j.duration_ms)}</span>`);
+  if(j.tok_in||j.tok_out)bits.push(
+    `<span title="token:输入 ${j.tok_in||0}(含缓存读写) / 输出 ${j.tok_out||0}">`+
+    `↑${fmtTok(j.tok_in)} ↓${fmtTok(j.tok_out)}</span>`);
+  if(j.cost_usd)bits.push(`<span title="本次花费">$${Number(j.cost_usd).toFixed(4)}</span>`);
+  if(j.turns>1)bits.push(`<span title="模型内部轮次">${j.turns}轮</span>`);
+  return bits.length?`<span class="jmeta small muted">${bits.join(" · ")}</span>`:"";}
+
+async function retryJob(id){try{
+  const r=await api("/api/job",{op:"retry",id:id});
+  startPoll();pollJobs();
+  toast(r.job&&r.job.chat_id?"已重试 —— 会带上该对话的上下文":"已重新提交",4000);
+}catch(e){toast(e.message,5000);}}
+
+/* 从任务回到它所属的对话:切过去并滚到底 */
+async function gotoChat(cid){
+  CHAT.id=cid;CHAT.pending=null;localStorage.setItem("wb_chat",cid);
+  await loadChat(cid);
+  const el=$("#thread");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
+  toast("已回到该对话,可以接着往下说");}
+
 function paintJobs(){
   const el=$("#jobs");if(!el)return;
   const jobs=S._jobs||[];
   el.innerHTML=jobs.length?jobs.map(j=>{
-    const st=j.status==="done"?`<span class="tag g">完成</span>`
-      :j.status==="failed"?`<span class="tag r">失败</span>`
-      :`<span class="tag y"><span class="spin"></span>${j.status==="queued"?"排队":"运行中"}</span>`;
+    const st=jobChip(j);
     const cats=(S._jobmeta||{}).categories||{};
     const arts=(j.artifacts||[]).map(a=>{
       const n=a.split("/").pop(),ed=/\.(md|txt|json|csv)$/i.test(n);
       return `<a class="f small" ${ed?`href="${edLink(a)}"`:`onclick="openLocal('${attr(a)}')"`}
         title="${attr(a)}">${extChip(n)} ${esc(n)}</a>`;}).join("");
     const busy=j.status==="queued"||j.status==="running";
+    const bad=j.status==="blocked"||j.status==="failed"||j.status==="timeout";
     return `<div class="job"><div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
-      ${st}${j.category&&cats[j.category]?`<span class="tag o">${esc(cats[j.category])}</span>`:""}
+      ${st}${j.category&&cats[j.category]?(j.chat_id
+        ?`<button class="tag o lnk" title="回到这条对话继续说"
+            onclick="gotoChat('${attr(j.chat_id)}')">${esc(cats[j.category])} ↗</button>`
+        :`<span class="tag o">${esc(cats[j.category])}</span>`):""}
       <b class="small">${esc(j.title)}</b><span style="flex:1"></span>
+      ${jobMeta(j)}
       <span class="mono muted">${esc(j.created||"")}</span>
-      ${busy?"":`<button class="sm" title="${JF.archived?"移回任务列表":"收起到已归档,不删内容"}"
+      ${busy?"":(bad&&j.prompt?`<button class="sm pri" title="用原指令重跑${
+        j.chat_id?"(会带上该对话的上下文)":""}" onclick="retryJob('${attr(j.id)}')">重试</button>`:"")+
+        `<button class="sm" title="${JF.archived?"移回任务列表":"收起到已归档,不删内容"}"
         onclick="jobOp('${JF.archived?"unarchive":"archive"}','${attr(j.id)}')"
         >${JF.archived?"取消归档":"归档"}</button>`+delBtn(`delJob('${attr(j.id)}')`,"永久删除该任务记录")}</div>
+      ${j.stop_detail?`<div class="small" style="color:var(--warn);margin-top:5px">
+        ⏸ ${esc(j.stop_detail)}${(j.denials||[]).length?` · 涉及工具:${esc(j.denials.join("、"))}`:""}</div>`:""}
       ${arts?`<div class="arts">📎 产出:${arts}</div>`:""}
       ${j.hint?`<div class="small" style="color:var(--bad);margin-top:5px">${esc(j.hint)}</div>`:""}
       ${/未获批|无权限|permission denied|被拒|拦下/.test(j.output||"")?
@@ -2675,8 +2960,35 @@ function syncRichToSource(){
   const t=$("#ed");if(t)t.value=EDSRC;}
 async function exportDoc(path,fmt){try{toast("导出中…");
   const r=await api("/api/export",{path:path,format:fmt});
-  toast("已导出:"+r.path.split("/").pop());refresh();
-  openLocal(r.path);}catch(e){toast(e.message,4000);}}
+  refresh();openLocal(r.path);
+  const hits=r.masked||[];
+  if(hits.length)mExportMasked(r.path,hits);
+  else toast("已导出:"+r.path.split("/").pop());
+}catch(e){toast(e.message,4000);}}
+
+/* 导出后提示:这份文件里有哪些假名要人工换回真名 */
+let EXPTSV="";
+function copyExpTsv(){
+  navigator.clipboard.writeText(EXPTSV)
+    .then(()=>toast("已复制,可粘进 Word 的查找替换或 Excel"))
+    .catch(()=>toast("复制失败,请手动抄写"));}
+function mExportMasked(path,hits){
+  const rows=hits.map(h=>`<tr><td class="mono"><b>${esc(h.code)}</b></td>
+    <td class="muted">→</td><td>${esc(h.real)}</td></tr>`).join("");
+  // 清单不能内联进 onclick —— 里面的引号会截断 HTML 属性,把 JS 渲染成可见文字
+  EXPTSV=hits.map(h=>`${h.code}\t${h.real}`).join("\n");
+  modal(`<h3>已导出 · 含 ${hits.length} 个脱敏字段</h3>
+  <p class="small">文件已生成:<span class="mono">${esc(path.split("/").pop())}</span></p>
+  <div class="card" style="border-left:2px solid var(--warn);background:var(--warn-bg);padding:12px 14px">
+    <b class="small">交给客户之前,请把左列替换成右列。</b>
+    <div class="small" style="margin-top:5px">工作台<b>不自动还原</b> —— 这是你定的流程,
+      留一道人工确认。<b>务必从上往下按顺序替换</b>(已按长度排好),
+      否则短的假名会啃掉长的前半截。</div>
+  </div>
+  <table class="t" style="margin-top:10px">${rows}</table>
+  <div class="btns">
+    <button onclick="copyExpTsv()">复制替换清单</button>
+    <button class="pri" onclick="closeModal()">知道了</button></div>`);}
 /* 勾选行动项:只改源码里对应那一行,不做整篇 HTML 往返,零格式风险 */
 async function toggleTask(idx,checked,ev){
   if(ev)ev.stopPropagation();
@@ -2878,6 +3190,8 @@ async function route(){
   else if(h==="#/ai")html=vAI();
   else if(h==="#/trash"){html=`<div class="empty small">加载中…</div>`;
     vTrash().then(x=>{if(location.hash==="#/trash")$("#view").innerHTML=x;});}
+  else if(h==="#/mask"){html=`<div class="empty small">加载中…</div>`;
+    vMask().then(x=>{if(location.hash==="#/mask")$("#view").innerHTML=x;});}
   else if(h.startsWith("#/edit/")){
     const np=decodeURIComponent(h.slice(7));
     if(np!==prevPath)EDMODE="preview";  // 换文件才回预览态(同文件重绘保留当前模式)
@@ -2887,7 +3201,9 @@ async function route(){
   paintSide();
   if(edPath)loadEd();
   if(h==="#/ai"){paintChat();startPoll();
-    const ta=$("#aiP");if(ta)chatGrow(ta);}}
+    const ta=$("#aiP");if(ta)chatGrow(ta);
+    paintBashToggle();}
+  if(h==="#/knowledge")paintKbWhitelist();}
 window.addEventListener("hashchange",route);
 (async()=>{try{await refresh();}catch(e){}
   route();startPoll();})();

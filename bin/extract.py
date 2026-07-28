@@ -23,6 +23,35 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def mask_dirs():
+    """哪些知识库子目录在提取时需要脱敏 —— **由用户在界面上指定,不由程序推断**。
+
+    默认为空 = 都不脱敏。理由是用户的:知识库里很多客户信息本来就出自公开发表的
+    文章,脱敏既没必要、又会把可读的参考资料搅乱。哪些数据该保护,用户自己最清楚。
+    """
+    try:
+        cfg = json.loads((ROOT / "workbench.json").read_text(encoding="utf-8"))
+        return [d for d in (cfg.get("knowledge", {}).get("mask_dirs") or []) if d]
+    except Exception:      # noqa: BLE001
+        return []
+
+
+def _mask(text, rel, dirs):
+    """只对指定目录下的文件脱敏。替换完全对照映射表,表里没有的一律不动。"""
+    if not dirs:
+        return text
+    top = Path(rel).parts[0] if Path(rel).parts else ""
+    if top not in dirs:
+        return text
+    try:
+        import mask
+        return mask.mask_text(text)
+    except Exception:      # noqa: BLE001  映射表不可用时不能让提取整体失败
+        return text
+
+
 DEFAULT_SRC = ROOT / "knowledge" / "my local knowledge"
 OUT_DIR = ROOT / "knowledge" / ".extracted"
 MANIFEST = OUT_DIR / "_manifest.json"
@@ -248,6 +277,9 @@ def main():
         return
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    MDIRS = mask_dirs()
+    if MDIRS:
+        print(f"[extract] 脱敏目录: {'、'.join(MDIRS)}(其余目录原样提取)")
     stats = {"ok": 0, "skip": 0, "fail": 0}
     for p in files:
         rel = str(p.relative_to(src_root))
@@ -265,7 +297,7 @@ def main():
             print(f"  ⚠ {rel} → {status}")
             continue
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(body, encoding="utf-8")
+        out_path.write_text(_mask(body, rel, MDIRS), encoding="utf-8")
         manifest[rel] = {"sha": digest, "status": "ok",
                          "out": str(out_path.relative_to(OUT_DIR)),
                          "chars": len(body)}

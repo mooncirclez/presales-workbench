@@ -591,6 +591,61 @@ def toggle_meeting_todo(rel, index, checked):
     return str(p.relative_to(ROOT))
 
 
+ARCH_CUST = "_customers"      # archive/_customers/<客户>/ —— 与归档项目分开放,避免同名打架
+
+
+def customer_projects(name):
+    """某客户名下的项目。删客户/归档客户前必须先查这个 ——
+    否则项目会变成挂着不存在客户的孤儿,看板统计和客户下钻全会错。"""
+    active, archived = [], []
+    pbase = ROOT / "projects"
+    if pbase.is_dir():
+        for d in sorted(pbase.iterdir()):
+            if not d.is_dir():
+                continue
+            meta = wb.load_json(d / "project.json") or {}
+            if meta.get("customer", "") == name:
+                active.append(d.name)
+    abase = ROOT / "archive"
+    if abase.is_dir():
+        for d in sorted(abase.iterdir()):
+            if not d.is_dir() or d.name == ARCH_CUST:
+                continue
+            meta = wb.load_json(d / "project.json") or {}
+            if meta.get("customer", "") == name:
+                archived.append(d.name)
+    return {"active": active, "archived": archived}
+
+
+def scan_archived_customers():
+    out = []
+    base = ROOT / "archive" / ARCH_CUST
+    if not base.is_dir():
+        return out
+    for d in sorted(base.iterdir()):
+        if d.is_dir():
+            out.append({"id": d.name, "meta": wb.load_json(d / "customer.json") or {}})
+    return out
+
+
+def orphan_projects():
+    """引用了已不存在客户的项目 —— 界面上要标出来,否则用户根本不知道数据烂了。"""
+    cust = {p.name for p in (ROOT / "customers").iterdir() if p.is_dir()} \
+        if (ROOT / "customers").is_dir() else set()
+    arch = {c["id"] for c in scan_archived_customers()}
+    known = cust | arch
+    out = []
+    pbase = ROOT / "projects"
+    if pbase.is_dir():
+        for d in sorted(pbase.iterdir()):
+            if not d.is_dir():
+                continue
+            c = (wb.load_json(d / "project.json") or {}).get("customer", "")
+            if c and c not in known:
+                out.append({"dir": d.name, "customer": c})
+    return out
+
+
 def scan_archived():
     """archive/ 下已归档项目:元数据 + 文件清单(供归档详情页查看)。"""
     out = []
@@ -697,7 +752,9 @@ def make_weekly(c):
     while p.exists():   # 绝不覆盖已有周报(可能是 AI 精修版)
         p = rdir / f"周报-{today.strftime('%Y-%m-%d')}-v{i}.md"
         i += 1
-    p.write_text(md, encoding="utf-8")
+    # 兜底再脱敏一次:周报是**派生产出**,数据本身已脱敏时这里是空操作,
+    # 但它会汇总目录名与文件名 —— 脱敏之前建的老目录会把真名带进新周报。
+    p.write_text(mask_in(md), encoding="utf-8")
     return str(p.relative_to(ROOT))
 
 
@@ -732,7 +789,7 @@ def scan_projects(c):
         pending = [f.name for f in d.iterdir()
                    if f.is_file() and not f.name.startswith(".")
                    and f.suffix.lower() in EXTRACTABLE
-                   and not (d / ".extracted" / (f.stem + ".md")).exists()]
+                   and not (d / ".extracted" / sidecar_name(f)).exists()]
         out.append({"dir": d.name, "meta": meta, "slots": slots, "others": others,
                     "pending_extract": pending,
                     "done": done, "total": len(slots)})
@@ -762,7 +819,11 @@ def scan_tree(rel):
 
 
 def search_all(q, limit=200):
+    # 磁盘上存的是假名,所以查询词要先翻一遍:搜「示例银行」实际去搜「sl银行」。
+    # 两个都试:用户可能直接输假名。
+    q_masked = mask_in(q)
     q_low = q.lower()
+    q_low2 = q_masked.lower() if q_masked != q else ""
     hits = []
     for top in ["customers", "projects", "knowledge", "inbox"]:
         base = ROOT / top
@@ -775,7 +836,8 @@ def search_all(q, limit=200):
                 continue
             try:
                 for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-                    if q_low in line.lower():
+                    low = line.lower()
+                    if q_low in low or (q_low2 and q_low2 in low):
                         hits.append({"path": str(p.relative_to(ROOT)), "line": i,
                                      "text": line.strip()[:160]})
                         if len(hits) >= limit:
@@ -915,9 +977,21 @@ EXTRACTABLE = {".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xlsm", ".rtf", ".odt
                ".html", ".htm", ".csv"}
 
 
+def sidecar_name(p):
+    """伴生文本的文件名 —— 原文件名本身常带客户名(「某厂商x示例证券…docx」),
+    要和正文一起脱敏。存在性判断也必须用这个函数,否则改名后每次都重复生成。"""
+    return mask_in(Path(p).stem) + ".md"
+
+
 def extract_sidecar(file_path):
     """给二进制交付物生成同名 .md 伴生文本,落到同目录的 .extracted/ 下。
-    AI 的 Read 工具读不了 docx/xlsx/pptx,预先提取才能被可靠引用(否则它可能靠文件名瞎猜)。"""
+
+    AI 的 Read 工具读不了 docx/xlsx/pptx,预先提取才能被可靠引用(否则它可能靠文件名瞎猜)。
+
+    **伴生文本必须脱敏**:知识库那三棵树是整体封禁的,但项目交付物 AI 必须能读
+    (生成 SOW 要参考前序的需求场景与 POC),所以封不得 —— 只能在提取这一步就换成假名。
+    原始二进制里的真名去不掉,但 AI 拿不到 Bash,读不了二进制,只能读这份。
+    """
     p = Path(file_path)
     if p.suffix.lower() not in EXTRACTABLE or not p.is_file():
         return None
@@ -932,12 +1006,16 @@ def extract_sidecar(file_path):
         return None
     if len(body.strip()) < 10:
         return None
+    body = mask_in(body)
+    src_shown = mask_in(p.name)
     out_dir = p.parent / ".extracted"
     out_dir.mkdir(exist_ok=True)
-    out = out_dir / (p.stem + ".md")
+    out = out_dir / sidecar_name(p)
     out.write_text(
-        f"---\nsource: {p.name}\nextracted: {now_iso()}\nchars: {len(body)}\n---\n\n"
-        f"> 由 `{p.name}` 自动提取的纯文本(供 AI 读取;原文以 {p.suffix} 为准)\n\n"
+        f"---\nsource: {src_shown}\nextracted: {now_iso()}\nchars: {len(body)}\n"
+        f"masked: true\n---\n\n"
+        f"> 由 `{src_shown}` 自动提取的纯文本(供 AI 读取;原文以 {p.suffix} 为准)\n"
+        f"> 客户侧名称已脱敏,对照表见 `python3 bin/mask.py table`\n\n"
         + body[:300_000] + "\n", encoding="utf-8")
     return str(out.relative_to(ROOT))
 
@@ -950,7 +1028,7 @@ def extract_dir_sidecars(d):
             continue
         if f.suffix.lower() not in EXTRACTABLE:
             continue
-        side = f.parent / ".extracted" / (f.stem + ".md")
+        side = f.parent / ".extracted" / sidecar_name(f)
         if side.exists() and side.stat().st_mtime >= f.stat().st_mtime:
             skipped += 1
             continue
@@ -1387,6 +1465,180 @@ def job_env(p=None):
     return env
 
 
+# ---------------- 入站脱敏(客户侧真名 → 可读假名) ----------------
+# 原则:凡是**用户输入 → 落盘**或**用户输入 → 送 AI**的文本,都先过这一道。
+# 只替换已登记在 .mask/map.json 里的客户侧实体;我方同事不登记,因此天然不动。
+
+import mask as maskmod  # noqa: E402  同目录模块,与 workbench 一样的导入方式
+
+# 只做名字替换的字段(其余如 industry/level/sales 是我方或非识别信息,不动)
+CUST_MASK_FIELDS = ("full_name", "org")
+# 联系方式类字段**直接删除,不存**。
+# 起初是换成「sl银行-网址」这种占位符,但用户的判断更干脆:这些东西
+# 工作台根本不需要,存了就是风险,占位符只是把风险搬进了映射表。
+CUST_DROP_FIELDS = ("address", "website", "phone", "wechat", "email", "fax")
+# 「别名」是**只写通道**:填客户简称(如把「示例银行」写成「示例行」),直接进映射表当替换词,
+# 不落 customer.json —— 否则简称本身就是明文。前端也不回显。
+ALIAS_KEYS = ("aliases", "alias")
+
+
+def mask_in(s):
+    """入站文本脱敏。**fail closed**:映射表坏了就报错,不静默放行真名。"""
+    if not s:
+        return s
+    return maskmod.mask_text(s)
+
+
+def register_customer(name):
+    """新建客户:登记真名 → 返回假名(同时用作目录名)。"""
+    code, _ = maskmod.code_for(name, "customer")
+    return code or name
+
+
+_SEP = re.compile(r"[、,,/;;|\s]+")
+
+
+def mask_people(s, cust_code=""):
+    """客户方人员名单:按分隔符拆开**逐个登记**再替换。
+
+    不能只用 mask_text —— 纪要里写的客户方参会人多半是第一次出现,
+    还没进映射表,mask_text 找不到就原样落盘了。
+    """
+    if not s or not s.strip():
+        return s
+    out, buf = [], ""
+    for tok in re.split(r"([、,,/;;|\s]+)", s):
+        if not tok:
+            continue
+        if _SEP.fullmatch(tok):
+            out.append(tok)
+            continue
+        code, _ = maskmod.code_for(tok.strip(), "contact", parent=cust_code)
+        out.append(code or tok)
+    return "".join(out) or buf
+
+
+def mask_customer_json(text, cust_code=""):
+    """客户档案 JSON:定向脱敏指定字段 + 联系人/组织架构里的人名。
+
+    联系人姓名必须走 code_for 登记(而不是 mask_text),否则新加的联系人
+    没进映射表,mask_text 找不到就原样落盘 —— 这是最容易漏的一处。
+    """
+    try:
+        d = json.loads(text)
+    except json.JSONDecodeError:
+        return mask_in(text)          # 不是合法 JSON,退回全文替换
+    if not isinstance(d, dict):
+        return mask_in(text)
+    # 别名先入表(后面的替换才认得简称),然后把字段本身丢掉,绝不落盘
+    for k in ALIAS_KEYS:
+        v = d.pop(k, None)
+        names = ([x.strip() for x in re.split(r"[、,,/;;|\s]+", v) if x.strip()]
+                 if isinstance(v, str) else
+                 [str(x).strip() for x in (v or []) if str(x).strip()])
+        if names and cust_code:
+            try:
+                maskmod.add_alias(cust_code, names)
+            except maskmod.MaskError:
+                pass          # 客户还没登记过,别名等下次编辑再补
+    for f in CUST_MASK_FIELDS:
+        if isinstance(d.get(f), str):
+            d[f] = mask_in(d[f])
+    for f in CUST_DROP_FIELDS:
+        d.pop(f, None)
+    for ct in d.get("contacts") or []:
+        if not isinstance(ct, dict):
+            continue
+        if (ct.get("name") or "").strip():
+            code, _ = maskmod.code_for(ct["name"].strip(), "contact", parent=cust_code)
+            if code:
+                ct["name"] = code
+        for f in CUST_DROP_FIELDS:
+            ct.pop(f, None)
+    # org 是一棵文本树,里面也写着人名;上面 CUST_MASK_FIELDS 已覆盖,
+    # 但新联系人刚登记完需要再刷一遍才能替换到
+    if isinstance(d.get("org"), str):
+        d["org"] = mask_in(d["org"])
+    return json.dumps(d, ensure_ascii=False, indent=2)
+
+
+def masked_hits(path, limit=20):
+    """这份文件里出现了哪些假名。导出时用 —— 只提醒"含脱敏字段"太空泛,
+    直接列出「文档里的 sl银行 要替换成 示例银行」才用得上。"""
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    d = maskmod.load_map()
+    hits = [{"code": c, "real": e.get("real", "")}
+            for c, e in d["entities"].items() if c in text]
+    hits.sort(key=lambda h: len(h["code"]), reverse=True)   # 人工替换必须从长到短
+    return hits[:limit]
+
+
+def mask_table():
+    """映射表全量 —— **唯一会把真名送到浏览器的接口**,只在用户主动点开时调用。
+    界面其余地方一律只显示假名,所以它不能混进 /api/state。"""
+    d = maskmod.load_map()
+    rows = [{"code": c, "real": e.get("real", ""), "kind": e.get("kind", ""),
+             "aliases": e.get("aliases") or [], "created": e.get("created", "")}
+            for c, e in d["entities"].items()]
+    rows.sort(key=lambda r: (r["kind"], r["code"]))
+    # 人工全局替换必须从长到短做,否则「sl银行」会啃掉「sl银行2」的前半截
+    rows_by_len = sorted(rows, key=lambda r: len(r["code"]), reverse=True)
+    tsv = "\n".join(f"{r['code']}\t{r['real']}" for r in rows_by_len)
+    return {"rows": rows, "tsv": tsv, "total": len(rows),
+            "map_file": str(maskmod.MAP_FILE.relative_to(ROOT))}
+
+
+def knowledge_subdirs():
+    kb = ROOT / "knowledge" / "my local knowledge"
+    if not kb.is_dir():
+        return []
+    return sorted(p.name for p in kb.iterdir()
+                  if p.is_dir() and not p.name.startswith("."))
+
+
+def ai_deny_rules(c):
+    """AI 任务的**硬边界**(不是提示词约定)。
+
+    实测(claude 2.1.220):`permissions.deny` 能盖过 `--permission-mode bypassPermissions`,
+    且 `Read(path)` 一条会连带拦住该路径的 Grep / Glob。
+
+    为什么必须连 Bash 一起封:只 deny Read 时,实测 Claude 会讲原则拒绝改用
+    `cat` 绕过 —— 但那是**模型自愿**,不是机制保证。工作台现在支持切
+    DeepSeek/Kimi,换个模型完全可能直接 cat。要边界就得封到工具层。
+    """
+    deny = [
+        "Read(./.mask/**)",       # 客户真名映射表 —— 读到一次等于全部客户裸奔
+        "Read(./.workbench/**)",  # 第三方 API key(明文)、邮箱密码、任务日志
+    ]
+    # 只挡原文是不够的:knowledge/.extracted/ 存的是同一批资料的**提取全文**,
+    # knowledge/wiki/ 是它们编译出来的知识页。实测漏掉这两处时,Grep 一把命中 180
+    # 个文件 —— 锁了正门开了后门,而且 .extracted 才是 AI 真正会读的东西。
+    kb_rel = "./knowledge/my local knowledge"
+    ex_rel = "./knowledge/.extracted"
+    wl = [s for s in (c.get("knowledge", {}).get("ai_whitelist") or []) if s]
+    if not wl:
+        deny += [f"Read({kb_rel}/**)", f"Read({ex_rel}/**)",
+                 "Read(./knowledge/wiki/**)"]        # 白名单为空 = 三棵树全不放通
+    else:
+        kb = ROOT / "knowledge" / "my local knowledge"
+        subs = sorted(p.name for p in kb.iterdir()
+                      if p.is_dir() and not p.name.startswith(".")) if kb.exists() else []
+        for s in subs:
+            if s not in wl:
+                deny += [f"Read({kb_rel}/{s}/**)", f"Read({ex_rel}/{s}/**)"]
+        # 白名单以目录为单位;根下散落的文件不属于任何放通目录,一并挡掉
+        deny += [f"Read({kb_rel}/*.*)", f"Read({ex_rel}/*.*)"]
+        # wiki 是跨目录编译的,无法按子目录切分 —— 只要有目录未放通就整体不放通
+        if len(wl) < len(subs):
+            deny.append("Read(./knowledge/wiki/**)")
+    if not c.get("ai", {}).get("allow_bash"):
+        deny.append("Bash")
+    return deny
+
+
 def ai_command(c, prompt, p=None, resume=None):
     ai = c.get("ai", {})
     tpl = ai.get("command") or DEFAULT_AI_COMMAND
@@ -1419,6 +1671,11 @@ def ai_command(c, prompt, p=None, resume=None):
     # 续话:把上一轮的 session_id 接上,claude 会带着完整上下文继续
     if resume and "--resume" not in cleaned and "-r" not in cleaned:
         cleaned += ["--resume", str(resume)]
+    # 硬边界:映射表 / 凭证 / 未放通的知识库目录 / Bash
+    if "--settings" not in cleaned:
+        cleaned += ["--settings",
+                    json.dumps({"permissions": {"deny": ai_deny_rules(c)}},
+                               ensure_ascii=False)]
     return cleaned
 
 
@@ -1451,6 +1708,7 @@ def auth_hint(msg, env=None):
 def run_job(job_id, cmd, env=None):
     env = job_env() if env is None else env
     extra = {}          # 超时/找不到 CLI 时也要有,否则下面 update 会炸
+    t0 = time.time()
     with JOBS_LOCK:
         JOBS[job_id]["status"] = "running"
         JOBS[job_id]["started"] = now_iso()
@@ -1464,19 +1722,43 @@ def run_job(job_id, cmd, env=None):
         status = "done" if ok else "failed"
         hint = ""
         env_j = parse_cli_json(out)
-        if env_j is not None:                    # JSON 信封:取正文,顺带拿 session/成本
+        if env_j is not None:                    # JSON 信封:取正文,顺带拿 session/成本/用量
+            u = env_j.get("usage") or {}
+            # 缓存读写也是真实计费的输入,算进「输入」里,否则显示的量会明显偏小
+            tok_in = sum(int(u.get(k) or 0) for k in
+                         ("input_tokens", "cache_creation_input_tokens",
+                          "cache_read_input_tokens"))
+            denials = env_j.get("permission_denials") or []
             extra = {"session_id": env_j.get("session_id") or "",
                      "cost_usd": env_j.get("total_cost_usd") or 0,
                      "turns": env_j.get("num_turns") or 0,
-                     "duration_ms": env_j.get("duration_ms") or 0}
+                     "duration_ms": env_j.get("duration_ms") or 0,
+                     "tok_in": tok_in, "tok_out": int(u.get("output_tokens") or 0),
+                     "denials": [d.get("tool_name") or str(d) for d in denials][:8]}
             out = str(env_j.get("result") or "").strip()
             if env_j.get("is_error"):            # CLI 退出码 0 但内部报错
                 ok, status = False, "failed"
+            elif denials:
+                # 跑完了但没干成:被 deny 规则拦下(常见于「AI 可读范围」全不放通)
+                status = "blocked"
+                tools = "、".join(sorted({d.get("tool_name") or "?" for d in denials}))
+                extra["stop_detail"] = f"被权限规则拦下:{tools}"
+                hint = ("AI 想用的工具被「知识库 → AI 可读范围」的规则挡住了。"
+                        "去勾上它需要的目录后点「重试」;grep 类操作还需要放通 Bash。")
+            elif (env_j.get("subtype") or "") == "error_max_turns":
+                status = "blocked"
+                extra["stop_detail"] = "达到轮次上限,任务没走完"
+                hint = "任务太大,拆成更小的范围重试(如 wiki 一次只编译一个主题)。"
+            elif (env_j.get("stop_reason") or "") == "max_tokens":
+                status = "blocked"
+                extra["stop_detail"] = "输出达到长度上限,内容被截断"
+                hint = "让它分批产出,或缩小单次范围后重试。"
         if not ok:
-            hint = auth_hint(err + "\n" + out, env)
-        result = out if ok else (err or out or "无输出")
+            hint = auth_hint(err + "\n" + out, env) or hint
+        result = out if status != "failed" else (err or out or "无输出")
     except subprocess.TimeoutExpired:
-        status, result, hint = "failed", "任务超时(30 分钟)", ""
+        status, result = "timeout", "任务超时(30 分钟未结束,已终止)"
+        hint = "范围太大或模型卡住了。缩小范围后点「重试」。"
     except FileNotFoundError:
         status, result, hint = "failed", "找不到 claude CLI", "请先安装 Claude Code CLI 并登录。"
     with JOBS_LOCK:
@@ -1486,6 +1768,9 @@ def run_job(job_id, cmd, env=None):
                              "output": result[-8000:], "hint": hint,
                              "artifacts": extract_artifacts(result)})
         JOBS[job_id].update(extra)
+        # 非 AI 任务(如文档提取)没有 JSON 信封,耗时按起止时间算
+        if not JOBS[job_id].get("duration_ms"):
+            JOBS[job_id]["duration_ms"] = int((time.time() - t0) * 1000)
         rec = dict(JOBS[job_id])
     try:
         JOBS_DIR.mkdir(exist_ok=True)
@@ -1510,10 +1795,14 @@ def save_jobs_log():
 
 
 JOB_CATEGORIES = {
-    "deliverable": "交付物", "minutes": "纪要周报", "wiki": "知识编译",
+    "chat": "对话", "deliverable": "交付物", "minutes": "纪要周报", "wiki": "知识编译",
     "extract": "文档提取", "skill": "技能", "collab": "客户情报",
     "scheduled": "定时任务", "other": "其他",
 }
+
+# 任务终态。blocked 是「跑完了但没干成」——模型被权限规则拦下、或撞到轮次/长度上限,
+# 这类以前一律记成 done,列表上看着完成、点开才发现它在求授权。
+JOB_STATES = {"done": "完成", "blocked": "中断", "timeout": "超时", "failed": "失败"}
 
 
 def guess_category(title):
@@ -1598,7 +1887,8 @@ def submit_job(c, title, prompt, category=None, chat_id=None):
     resume, note = resume_target(chat_id, p.get("label", ""))
     cmd, env = ai_command(c, prompt, p, resume=resume), job_env(p)
     job = {"id": job_id, "title": title[:120], "prompt": prompt[:4000],
-           "category": category or guess_category(title),
+           # 从对话框来的归到「对话」类,和一次性任务区分开
+           "category": category or ("chat" if chat_id else guess_category(title)),
            "status": "queued", "created": now_iso(), "output": "", "hint": "",
            "artifacts": [], "chat_id": chat_id or "", "resumed": bool(resume),
            "note": note, "session_id": "", "cost_usd": 0,
@@ -1621,6 +1911,8 @@ def load_job_history(limit=500):
             try:
                 rec = json.loads(line)
                 rec.setdefault("category", guess_category(rec.get("title", "")))
+                if rec.get("chat_id"):      # 「对话」分类是后加的,历史记录回填
+                    rec["category"] = "chat"
                 rec.setdefault("artifacts", extract_artifacts(rec.get("output", "")))
                 JOBS[rec.get("id", uuid.uuid4().hex[:12])] = rec
             except json.JSONDecodeError:
@@ -1876,6 +2168,15 @@ class Handler(BaseHTTPRequestHandler):
                     except OSError:
                         m["content"] = "(读取失败)"
                 self._send(200, {"project": proj, "items": items})
+            elif u.path == "/api/mask-table":
+                self._send(200, mask_table())
+            elif u.path == "/api/mask-config":
+                _c = cfg()          # GET 分支不像 POST 那样已经加载过配置
+                self._send(200, {"subdirs": knowledge_subdirs(),
+                                 "whitelist": _c.get("knowledge", {}).get("ai_whitelist") or [],
+                                 "mask_dirs": _c.get("knowledge", {}).get("mask_dirs") or [],
+                                 "allow_bash": bool(_c.get("ai", {}).get("allow_bash")),
+                                 "deny": ai_deny_rules(_c)})
             elif u.path == "/api/trash":
                 self._send(200, {"items": load_trash()})
             elif u.path == "/api/templates":
@@ -1921,7 +2222,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"jobs": sel[:limit], "total": len(allj),
                                  "matched": len(sel), "counts": counts,
                                  "archived_total": n_arch, "archived_view": want_arch,
-                                 "categories": JOB_CATEGORIES})
+                                 "categories": JOB_CATEGORIES, "states": JOB_STATES})
             else:
                 self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
@@ -1943,7 +2244,15 @@ class Handler(BaseHTTPRequestHandler):
                 p = writable_path(body.get("path", ""))
                 if not p.parent.is_dir():
                     raise FileNotFoundError(f"目录不存在: {p.parent}")
-                p.write_text(body.get("content", ""), encoding="utf-8")
+                # 编辑保存是最大的收窄点:客户档案的联系人/组织架构、以及所有 md 正文都走这里
+                content = body.get("content", "")
+                rel = p.relative_to(ROOT).as_posix()
+                if p.name == "customer.json":
+                    # 目录名就是该客户的假名,拿它当联系人的 parent
+                    content = mask_customer_json(content, cust_code=p.parent.name)
+                elif p.suffix.lower() in (".md", ".txt", ".json"):
+                    content = mask_in(content)
+                p.write_text(content, encoding="utf-8")
                 rel = str(p.relative_to(ROOT))
                 if rel.startswith("plugins/skills/") and p.name == "SKILL.md":
                     mirror_skill(p.parent.name)   # 技能改动即时生效到 .claude/skills/
@@ -1965,6 +2274,15 @@ class Handler(BaseHTTPRequestHandler):
                 # 统一删除:文件/目录移入回收站(客户/项目/纪要/场景/知识文件…)
                 rel = body.get("path", "")
                 kind = body.get("kind", "file")
+                if kind == "customer":
+                    # 引用完整性:客户名下还有在营项目时不许删,否则项目变孤儿
+                    cname = Path(rel).name
+                    ps = customer_projects(cname)
+                    if ps["active"]:
+                        raise ValueError(
+                            f"「{cname}」名下还有 {len(ps['active'])} 个进行中的项目,"
+                            f"请先把它们删除或归档:" + "、".join(ps["active"][:5])
+                            + ("…" if len(ps["active"]) > 5 else ""))
                 tid = move_to_trash(rel, kind, body.get("note", ""))
                 if kind == "scenario":
                     ind = Path(rel).parent
@@ -2179,7 +2497,8 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/upload":
                 import base64
                 rel_dir = body.get("dir", "inbox")
-                fname = slug(body.get("filename", "upload"))
+                # 文件名本身就带客户名,落盘前先换假名
+                fname = slug(mask_in(body.get("filename", "upload")))
                 if not fname:
                     raise ValueError("文件名为空")
                 d = safe_path(rel_dir)
@@ -2189,6 +2508,12 @@ class Handler(BaseHTTPRequestHandler):
                 if suffix not in UPLOAD_SUFFIX:
                     raise PermissionError(f"不支持的文件类型 {suffix}")
                 data = base64.b64decode(body.get("content_b64", ""))
+                # 文本类上传的正文一并脱敏;二进制内容改不了,靠 extract_sidecar 的伴生文本兜底
+                if suffix in {".md", ".txt", ".csv", ".json", ".markdown", ".log"}:
+                    try:
+                        data = mask_in(data.decode("utf-8")).encode("utf-8")
+                    except UnicodeDecodeError:
+                        pass
                 if len(data) > 60 * 1024 * 1024:
                     raise ValueError("文件超过 60MB")
                 d.mkdir(parents=True, exist_ok=True)
@@ -2201,8 +2526,12 @@ class Handler(BaseHTTPRequestHandler):
                 p.write_bytes(data)
                 self._send(200, {"ok": True, "path": str(p.relative_to(ROOT))})
             elif u.path == "/api/export":
-                out = export_doc(body.get("path", ""), body.get("format", "docx"))
-                self._send(200, {"ok": True, "path": out})
+                rel = body.get("path", "")
+                out = export_doc(rel, body.get("format", "docx"))
+                # 导出**不自动还原**(用户要自己做一层人工处理)。但要如实告诉他
+                # 这份文件里有哪些假名 —— 空口提醒不如给出具体清单。
+                self._send(200, {"ok": True, "path": out,
+                                 "masked": masked_hits(safe_path(rel, must_exist=True))})
             elif u.path == "/api/email":
                 to = [x.strip() for x in (body.get("to") or "").replace(";", ",").split(",")
                       if x.strip()]
@@ -2222,6 +2551,9 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/event":
                 op = body.get("op")
                 ev = body.get("event") or {}
+                for _f in ("title", "note", "place"):
+                    if isinstance(ev.get(_f), str):
+                        ev[_f] = mask_in(ev[_f])
                 with CAL_LOCK:
                     events = load_events()
                     if op == "add":
@@ -2246,6 +2578,9 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/todo":
                 op = body.get("op")
                 t = body.get("todo") or {}
+                for _f in ("title", "note"):
+                    if isinstance(t.get(_f), str):
+                        t[_f] = mask_in(t[_f])
                 with TODO_LOCK:
                     items = load_todos()
                     if op == "add":
@@ -2296,6 +2631,10 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/collab":
                 op = body.get("op")
                 it = body.get("item") or {}
+                # 描述里常写客户名;peer/owner 是我方同事,不脱敏
+                for _f in ("title", "detail", "note"):
+                    if isinstance(it.get(_f), str):
+                        it[_f] = mask_in(it[_f])
                 with COLLAB_LOCK:
                     items = load_collab()
                     if op == "add":
@@ -2340,6 +2679,52 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("op 须为 add/update/delete")
                     save_schedules(items)
                 self._send(200, {"ok": True, "schedules": items})
+            elif u.path == "/api/mask-entry":
+                op = body.get("op")
+                code = (body.get("code") or "").strip()
+                als = body.get("aliases")
+                if isinstance(als, str):
+                    als = [x for x in re.split(r"[、,,/;;|\s]+", als) if x]
+                if op == "add":
+                    real = (body.get("real") or "").strip()
+                    if not real:
+                        raise ValueError("真名不能为空")
+                    kind = body.get("kind") or "customer"
+                    new_code, d = maskmod.code_for(real, kind, d=None)
+                    if als:
+                        maskmod.add_alias(new_code, als, d=d)
+                    maskmod.save_map(d)
+                    self._send(200, {"ok": True, "code": new_code})
+                elif op == "update":
+                    maskmod.update_entry(code, real=body.get("real"),
+                                    kind=body.get("kind"), aliases=als)
+                    self._send(200, {"ok": True, "code": code})
+                elif op == "delete":
+                    gone = maskmod.remove_entry(code)
+                    self._send(200, {"ok": True, "removed": gone.get("real", "")})
+                else:
+                    raise ValueError("op 须为 add / update / delete")
+            elif u.path == "/api/mask-config":
+                # 知识库白名单 + Bash 开关:改完立刻生效,下一个 AI 任务就用新的 deny 规则
+                cpath = ROOT / "workbench.json"
+                conf = wb.load_json(cpath) or {}
+                if "whitelist" in body:
+                    wl = [str(x) for x in (body.get("whitelist") or [])]
+                    bad = [x for x in wl if x not in set(knowledge_subdirs())]
+                    if bad:
+                        raise ValueError(f"不存在的知识库目录: {'、'.join(bad)}")
+                    conf.setdefault("knowledge", {})["ai_whitelist"] = wl
+                if "mask_dirs" in body:
+                    md = [str(x) for x in (body.get("mask_dirs") or [])]
+                    bad = [x for x in md if x not in set(knowledge_subdirs())]
+                    if bad:
+                        raise ValueError(f"不存在的知识库目录: {'、'.join(bad)}")
+                    conf.setdefault("knowledge", {})["mask_dirs"] = md
+                if "allow_bash" in body:
+                    conf.setdefault("ai", {})["allow_bash"] = bool(body.get("allow_bash"))
+                cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
+                                 encoding="utf-8")
+                self._send(200, {"ok": True, "deny": ai_deny_rules(conf)})
             elif u.path == "/api/ai-permission":
                 mode = body.get("mode", "")
                 if mode not in PERMISSION_MODES:
@@ -2458,9 +2843,10 @@ class Handler(BaseHTTPRequestHandler):
                 pref = slot_prefix(slot)
                 if not pref:
                     raise ValueError(f"槽位无编号前缀: {slot}")
+                # 交付物文件名同样脱敏(与 sidecar_name 保持一致)
                 saved = []
                 for f in (body.get("files") or [])[:20]:
-                    fname = slug(f.get("filename", "file"))
+                    fname = slug(mask_in(f.get("filename", "file")))
                     if not fname:
                         continue
                     if Path(fname).suffix.lower() in BLOCKED_UPLOAD:
@@ -2483,7 +2869,8 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/slot":
                 self._send(200, self.instantiate_slot(c, body))
             elif u.path == "/api/ai":
-                prompt = (body.get("prompt") or "").strip()
+                # 你打字时会写真名(「分析一下示例银行」)—— 提示词本身是最直接的出口
+                prompt = mask_in((body.get("prompt") or "").strip())
                 if not prompt:
                     raise ValueError("prompt 不能为空")
                 if not claude_available():
@@ -2500,6 +2887,24 @@ class Handler(BaseHTTPRequestHandler):
                 op = body.get("op") or ""
                 jid = (body.get("id") or "").strip()
                 n = 0
+                if op == "retry":
+                    # 用原指令重跑。带 chat_id 的会续上该对话的上下文,
+                    # 所以「改完权限再重试」能接着上一轮说,不用重新交代背景。
+                    with JOBS_LOCK:
+                        old = dict(JOBS.get(jid) or {})
+                    if not old:
+                        raise FileNotFoundError("任务不存在")
+                    if old.get("status") in ("queued", "running"):
+                        raise ValueError("任务还在运行,不用重试")
+                    if not (old.get("prompt") or "").strip():
+                        raise ValueError("这条任务没有留存指令,无法重试")
+                    if not claude_available():
+                        raise FileNotFoundError("本机未找到 claude CLI")
+                    job = submit_job(c, old.get("title") or "重试",
+                                     old["prompt"], category=old.get("category"),
+                                     chat_id=old.get("chat_id") or None)
+                    self._send(200, {"ok": True, "job": job})
+                    return
                 with JOBS_LOCK:
                     if op in ("archive", "unarchive"):
                         j = JOBS.get(jid)
@@ -2533,12 +2938,13 @@ class Handler(BaseHTTPRequestHandler):
                             del JOBS[k]
                         n = len(tgt)
                     else:
-                        raise ValueError("op 须为 archive/unarchive/delete/delete-chat/clear-archived")
+                        raise ValueError("op 须为 retry/archive/unarchive/delete/"
+                                         "delete-chat/clear-archived")
                 save_jobs_log()
                 self._send(200, {"ok": True, "affected": n})
             elif u.path == "/api/ai-quick":
                 # 同步小任务:生成一段文本直接返回(如定时任务指令改写),不进任务队列
-                prompt = (body.get("prompt") or "").strip()
+                prompt = mask_in((body.get("prompt") or "").strip())
                 if not prompt:
                     raise ValueError("prompt 不能为空")
                 if not claude_available():
@@ -2563,6 +2969,36 @@ class Handler(BaseHTTPRequestHandler):
                     raise PermissionError("仅支持 macOS 的本地打开")
             elif u.path == "/api/weekly":
                 self._send(200, {"ok": True, "path": make_weekly(c)})
+            elif u.path == "/api/archive-customer":
+                cname = slug(body.get("customer", ""))
+                src = ROOT / "customers" / cname
+                if not src.is_dir():
+                    raise FileNotFoundError(f"客户不存在: {cname}")
+                ps = customer_projects(cname)
+                if ps["active"]:
+                    raise ValueError(
+                        f"「{cname}」名下还有 {len(ps['active'])} 个进行中的项目,"
+                        f"请先归档或删除:" + "、".join(ps["active"][:5])
+                        + ("…" if len(ps["active"]) > 5 else ""))
+                dbase = ROOT / "archive" / ARCH_CUST
+                dbase.mkdir(parents=True, exist_ok=True)
+                dst, i = dbase / cname, 2
+                while dst.exists():
+                    dst = dbase / f"{cname}-{i}"
+                    i += 1
+                shutil.move(str(src), str(dst))
+                self._send(200, {"ok": True, "dir": dst.name,
+                                 "archived_projects": len(ps["archived"])})
+            elif u.path == "/api/restore-customer":
+                cname = slug(body.get("customer", ""))
+                src = ROOT / "archive" / ARCH_CUST / cname
+                if not src.is_dir():
+                    raise FileNotFoundError(f"归档客户不存在: {cname}")
+                dst = ROOT / "customers" / cname
+                if dst.exists():
+                    raise ValueError(f"客户区已存在同名目录: {cname}")
+                shutil.move(str(src), str(dst))
+                self._send(200, {"ok": True, "id": cname})
             elif u.path == "/api/archive-project":
                 proj = slug(body.get("project", ""))
                 src = ROOT / "projects" / proj
@@ -2688,6 +3124,8 @@ class Handler(BaseHTTPRequestHandler):
             "customers": scan_customers(),
             "projects": scan_projects(c),
             "archived": scan_archived(),
+            "archived_customers": scan_archived_customers(),
+            "orphans": orphan_projects(),
             "recent": recent_files(limit=12),
             "knowledge": scan_tree("knowledge"),
             "extract": extract_stats(),
@@ -2695,16 +3133,18 @@ class Handler(BaseHTTPRequestHandler):
         }
 
     def create_customer(self, c, body):
-        name = slug(body.get("name", ""))
-        if not name:
+        raw = (body.get("name") or "").strip()
+        if not raw:
             raise ValueError("客户名不能为空")
+        # 录入即脱敏:表单里填真名,登记后一律用假名当目录名与档案内容
+        name = slug(register_customer(raw))
         d = ROOT / "customers" / name
         if d.exists():
             raise ValueError(f"客户已存在: {name}")
         (d / "meetings").mkdir(parents=True)
         (d / "customer.json").write_text(json.dumps({
-            "full_name": name, "industry": "", "sales": "", "level": "重点", "address": "",
-            "website": "", "org": "", "contacts": [], "kpis": [],
+            "full_name": name, "industry": "", "sales": "", "level": "重点",
+            "org": "", "contacts": [], "kpis": [],
             "updated": now_iso()}, ensure_ascii=False, indent=2), encoding="utf-8")
         pid, pdir, manifest = active_pack(c)
         rel = manifest.get("files", {}).get("customer-profile")
@@ -2716,15 +3156,19 @@ class Handler(BaseHTTPRequestHandler):
             profile.write_text(
                 f"# 客户档案 · {name}\n\n> 当前模板包({pid})未挂载 customer-profile 槽位。"
                 f"请上传你的客户档案模板,或直接在此填写。\n", encoding="utf-8")
-        return {"ok": True, "id": name}
+        return {"ok": True, "id": name,
+                "masked": name != slug(raw), "real": raw}
 
     def create_project(self, c, body):
-        name = slug(body.get("name", ""))
-        customer = slug(body.get("customer", ""))
+        # 项目名里常带客户名(「示例银行-知识库建设」),一并脱敏
+        name = slug(mask_in((body.get("name") or "").strip()))
+        customer = slug(mask_in((body.get("customer") or "").strip()))
         stage = body.get("stage") or "调研"
         if not name or not customer:
             raise ValueError("项目名与客户均不能为空")
-        d = ROOT / "projects" / f"{customer}-{name}"
+        # 用户常把客户名也打进项目名里,别拼成「sl银行-sl银行-信创运维平台」
+        stem = name if name.startswith(f"{customer}-") else f"{customer}-{name}"
+        d = ROOT / "projects" / stem
         if d.exists():
             raise ValueError(f"项目已存在: {d.name}")
         d.mkdir(parents=True)
@@ -2744,7 +3188,8 @@ class Handler(BaseHTTPRequestHandler):
             raise FileNotFoundError(f"项目不存在: {project}")
         meta = wb.load_json(pdir / "project.json") or {}
         customer = meta.get("customer", "")
-        topic = slug(body.get("topic", "")) or "拜访"
+        # 纪要标题与正文是自由文本,真名最常出现在这里
+        topic = slug(mask_in(body.get("topic", ""))) or "拜访"
         date = body.get("date") or datetime.now().strftime("%Y-%m-%d")
         d = pdir / "meetings"
         d.mkdir(exist_ok=True)
@@ -2753,11 +3198,12 @@ class Handler(BaseHTTPRequestHandler):
             p = d / f"{date}-{topic}-{i}.md"
             i += 1
         # 结构化字段(纪要表单)→ 组装 Markdown;未提供则给骨架
-        pts = [x.strip() for x in (body.get("points") or "").splitlines() if x.strip()]
-        ccs = [x.strip() for x in (body.get("concerns") or "").splitlines() if x.strip()]
-        acts = [x.strip() for x in (body.get("actions") or "").splitlines() if x.strip()]
+        # 自由文本一律过入站脱敏;客户方参会人逐个登记,我方参会人保留真名
+        pts = [mask_in(x.strip()) for x in (body.get("points") or "").splitlines() if x.strip()]
+        ccs = [mask_in(x.strip()) for x in (body.get("concerns") or "").splitlines() if x.strip()]
+        acts = [mask_in(x.strip()) for x in (body.get("actions") or "").splitlines() if x.strip()]
         L = [f"# {topic}", "", f"- 日期:{date}", f"- 客户:{customer}",
-             f"- 参会(客户方):{body.get('att_cust', '')}",
+             f"- 参会(客户方):{mask_people(body.get('att_cust', ''), customer)}",
              f"- 参会(我方):{body.get('att_us', '')}", "", "## 要点", ""]
         L += [f"- {x}" for x in pts] or ["- "]
         L += ["", "## 客户关注 / 异议", ""]
