@@ -1,0 +1,29 @@
+# === 你的真实资料:绝不入库 ===
+knowledge/my local knowledge/*
+!knowledge/my local knowledge/放这里.md
+knowledge/.extracted/
+**/.extracted/
+
+# === 凭证与运行时 ===
+.env
+.env.*
+!.env.example
+.workbench/
+.mcp.json
+.claude/skills/
+.ima-mcp/
+**/*secret*
+**/*credential*
+
+# === 回收站与系统杂项 ===
+.trash/
+.DS_Store
+__pycache__/
+*.pyc
+
+# === 导出产物(可再生成) ===
+**/*.export.html
+
+# === 提醒 ===
+# 本工作台会存放客户敏感信息(报价 / 合同 / 组织架构 / 决策链)。
+# 若要对自己的数据做版本管理,请使用【私有】仓库。

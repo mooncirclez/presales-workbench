@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "id": "ev000001",
+      "title": "示例科技 POC 启动会",
+      "date": "2026-07-28",
+      "time": "14:00",
+      "duration_min": 90,
+      "place": "客户现场",
+      "customer": "示例科技",
+      "remind_min": 60,
+      "note": "带信创适配说明书",
+      "done": false,
+      "notified": false
+    },
+    {
+      "id": "ev000002",
+      "title": "内部方案评审",
+      "date": "2026-07-30",
+      "time": "10:30",
+      "duration_min": 60,
+      "place": "线上",
+      "customer": "",
+      "remind_min": 30,
+      "note": "",
+      "done": false,
+      "notified": false
+    }
+  ]
+}

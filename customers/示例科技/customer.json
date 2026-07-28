@@ -1,0 +1,58 @@
+{
+  "full_name": "示例科技集团股份有限公司",
+  "industry": "高端装备制造",
+  "sales": "李销售",
+  "level": "战略",
+  "address": "上海市浦东新区示例路 88 号",
+  "website": "www.example-tech.demo",
+  "org": "集团总部\n  信息技术部\n    王决策 CIO(决策人)\n    李技术 架构组负责人\n  客服中心\n    陈使用 客服总监\n  采购部\n    赵采购 采购总监",
+  "contacts": [
+    {
+      "name": "王决策",
+      "title": "信息技术部 · CIO",
+      "role": "决策人",
+      "phone": "138****0001",
+      "wechat": "wang@example-tech.demo",
+      "note": "支持,最关心 ROI 与三年 TCO"
+    },
+    {
+      "name": "李技术",
+      "title": "架构组 · 负责人",
+      "role": "技术把关",
+      "phone": "139****0002",
+      "wechat": "li@example-tech.demo",
+      "note": "中立,在意信创兼容与数据不出域"
+    },
+    {
+      "name": "陈使用",
+      "title": "客服中心 · 总监",
+      "role": "使用方",
+      "phone": "136****0003",
+      "wechat": "",
+      "note": "强烈支持,现有工单系统已无法承载业务量"
+    },
+    {
+      "name": "赵采购",
+      "title": "采购部 · 总监",
+      "role": "其他",
+      "phone": "",
+      "wechat": "",
+      "note": "【待补充】尚未建立联系 —— 商务阶段的盲区"
+    }
+  ],
+  "kpis": [
+    {
+      "name": "客服人力成本下降 30%",
+      "target": "30%",
+      "current": "已降 8%",
+      "note": "我方智能客服方案直接支撑"
+    },
+    {
+      "name": "工单平均首响 < 2 分钟",
+      "target": "2min",
+      "current": "6min",
+      "note": "POC 核心验证指标"
+    }
+  ],
+  "updated": "2026-07-27"
+}

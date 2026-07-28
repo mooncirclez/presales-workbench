@@ -1,0 +1,100 @@
+{
+  "name": "售前工作台",
+  "owner": "你的名字",
+  "company": {
+    "name": "【你的公司】",
+    "note": "公司专属信息只存在数据区,不随框架分发"
+  },
+  "templates": {
+    "dir": "plugins/templates",
+    "active_pack": "starter-v1"
+  },
+  "project_stages": [
+    "调研",
+    "方案",
+    "POC",
+    "商务",
+    "投标",
+    "签约",
+    "赢单",
+    "丢单"
+  ],
+  "pipeline": [
+    {
+      "slot": "customer-profile",
+      "label": "客户档案",
+      "stage": "建档"
+    },
+    {
+      "slot": "01-requirements",
+      "label": "需求场景",
+      "stage": "调研"
+    },
+    {
+      "slot": "02-project-approval",
+      "label": "立项报告",
+      "stage": "方案"
+    },
+    {
+      "slot": "03-poc",
+      "label": "POC 方案/报告",
+      "stage": "POC"
+    },
+    {
+      "slot": "04-margin",
+      "label": "毛利测算",
+      "stage": "商务"
+    },
+    {
+      "slot": "05-sow",
+      "label": "SOW",
+      "stage": "商务"
+    },
+    {
+      "slot": "06-bid",
+      "label": "投标技术方案",
+      "stage": "投标"
+    },
+    {
+      "slot": "07-contract-review",
+      "label": "合同评审",
+      "stage": "签约"
+    }
+  ],
+  "ai": {
+    "note": "AI 按钮调用的命令;{prompt} 与 {permission_mode} 会被替换。可换成任何具备文件读写能力的 CLI。",
+    "command": [
+      "claude",
+      "-p",
+      "{prompt}",
+      "--permission-mode",
+      "{permission_mode}"
+    ],
+    "permission_mode": "bypassPermissions",
+    "permission_note": "bypassPermissions=全部放行(后台任务不会中途卡住,推荐);acceptEdits=只放行文件编辑,执行命令会被拒;plan=只规划不动手"
+  },
+  "skill_market": {
+    "note": "可选:技能市场数据源,指向一个内含 const DATA = {...} 的 HTML 榜单页。留空则不启用。",
+    "source": ""
+  },
+  "transcribe": {
+    "note": "可选:本地录音转写命令,{audio} 会被替换为音频路径,转写文本输出到 stdout。例:[\"whisper-cli\",\"-m\",\"/path/ggml-base.bin\",\"-l\",\"zh\",\"-np\",\"-f\",\"{audio}\"]",
+    "command": null
+  },
+  "mcp": {
+    "dir": "plugins/mcp",
+    "enabled": [],
+    "note": "MCP 片段:加入 enabled 后由 sync 合并进 .mcp.json"
+  },
+  "skills": [
+    {
+      "id": "示例",
+      "label": "会话级技能由你的 Claude 环境提供,不随本仓库分发"
+    }
+  ],
+  "knowledge": {
+    "local_dir": "knowledge",
+    "note": "资料放 knowledge/my local knowledge/,支持任意自建子文件夹;reports/ 存周报",
+    "backends": []
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "starter-v1",
+  "version": "1.0.0",
+  "label": "通用起步包(占位)",
+  "origin": "claude-starter",
+  "updated": "2026-07-26",
+  "note": "结构演示用的占位包。请整包替换为你所在公司的真实模板:新建 plugins/templates/<你的包>/,写好 manifest.json,再把 workbench.json 的 active_pack 指过去。本包可随时整目录删除。",
+  "files": {
+    "customer-profile": "files/客户档案.md",
+    "01-requirements": "files/01-需求场景.md",
+    "02-project-approval": "files/02-立项报告.md",
+    "03-poc": "files/03-POC测试方案与报告.md",
+    "04-margin": "files/04-毛利测算.xlsx",
+    "05-sow": "files/05-SOW.md",
+    "06-bid": "files/06-投标技术方案.md",
+    "07-contract-review": "files/07-合同评审清单.md"
+  }
+}

@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>售前工作台 · Presales Workbench</title>
+<meta name="description" content="售前工程师的本地 AI 工作台:客户决策链、商机流水线、交付物生成、知识库。数据是你磁盘上的 Markdown,AI 通过 Claude Code 跑在本机。">
+<meta property="og:title" content="售前工作台 · Presales Workbench">
+<meta property="og:description" content="售前的一整条链路,装在你自己的磁盘上。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3d99'/><path d='M8 21V11h3.4l2.6 6 2.6-6H20v10h-2.4v-6.2L15.2 21h-2.4l-2.4-6.2V21z' fill='%23fff'/></svg>">
+<style>
+:root{
+  --bg:#f7f7f8; --card:#ffffff; --ink:#16181d; --muted:#6f7680; --line:#e7e9ec;
+  --accent:#1f3d99; --accent-ink:#fff; --accent-soft:#eef1fa;
+  --ok:#15803d; --ok-bg:#f0f7f2; --warn:#a16207; --warn-bg:#fbf6ea; --chip:#f2f3f5;
+  --term-bg:#14161c; --term-ink:#dfe3ea;
+  --shadow:0 1px 2px rgba(16,20,30,.04), 0 14px 34px -18px rgba(16,20,30,.22);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --maxw:1080px;
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#0e0f13; --card:#16181c; --ink:#e6e7ea; --muted:#8b919b; --line:#25272d;
+    --accent:#93b0f5; --accent-ink:#0e0f13; --accent-soft:#1b2132;
+    --ok:#4ade80; --ok-bg:#14241a; --warn:#e2b93b; --warn-bg:#26200f; --chip:#1e2026;
+    --term-bg:#0a0b0e; --term-ink:#dfe3ea;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 34px -18px rgba(0,0,0,.8);
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+/* grid/flex 子项默认 min-width:auto,内容超宽会把整份文档顶出横向滚动条 */
+.grid>*,.feat-txt>*,.stats>*,.princ>*,.limits>*,.vs>*,.foot-in>*,.step>*{min-width:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.75 var(--sans);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.9em}
+
+/* ── 通用零件 ───────────────────────────── */
+.eyebrow{
+  font-size:11px;letter-spacing:2.4px;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+.sec{padding:76px 0;border-top:1px solid var(--line)}
+.sec-head{display:flex;gap:18px;align-items:baseline;margin-bottom:34px}
+.sec-no{
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  font-weight:600;padding-left:11px;border-left:2px solid var(--accent);
+  line-height:1.4;flex:none;
+}
+.sec-head h2{font-size:26px;line-height:1.35;letter-spacing:-.2px;font-weight:700}
+.sec-head p{color:var(--muted);font-size:14.5px;margin-top:5px;max-width:56ch}
+
+/* ── Hero ──────────────────────────────── */
+header{padding:88px 0 8px}
+.brandmark{margin-bottom:38px}
+.brandmark b{display:block;font-size:17px;letter-spacing:.6px}
+.brandmark span{
+  display:block;font-size:10px;letter-spacing:3px;text-transform:uppercase;
+  color:var(--muted);margin-top:2px;
+}
+h1{
+  font-size:clamp(30px,5.2vw,46px);line-height:1.22;
+  letter-spacing:-.9px;font-weight:750;max-width:19ch;
+}
+h1 em{font-style:normal;color:var(--accent)}
+.lede{
+  margin-top:20px;font-size:16.5px;line-height:1.8;
+  color:var(--muted);max-width:60ch;
+}
+.lede b{color:var(--ink);font-weight:600}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+.tag{
+  font-size:12px;padding:4px 11px;border-radius:999px;
+  background:var(--chip);color:var(--muted);border:1px solid var(--line);
+}
+.tag.on{background:var(--accent-soft);color:var(--accent);border-color:transparent;font-weight:600}
+
+/* 终端 */
+.term{
+  margin-top:32px;background:var(--term-bg);border-radius:12px;
+  overflow:hidden;box-shadow:var(--shadow);max-width:640px;position:relative;
+}
+.term-bar{
+  display:flex;align-items:center;gap:7px;padding:11px 14px;
+  border-bottom:1px solid rgba(255,255,255,.07);
+}
+.term-bar i{width:10px;height:10px;border-radius:50%;background:#3a3f4b;display:block}
+.term-bar b{
+  margin-left:8px;font:500 11px var(--mono);color:#767d8c;letter-spacing:.4px;
+}
+.term-body{padding:16px 18px 18px}
+.term pre{
+  font:13px/2 var(--mono);color:var(--term-ink);
+  white-space:pre-wrap;word-break:break-all;
+}
+.term .p{color:#5c95ff;user-select:none}
+.term .c{color:#6b7280}
+.copy{
+  position:absolute;top:7px;right:10px;
+  font:500 11px var(--sans);color:#8b93a3;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.1);border-radius:6px;
+  padding:4px 10px;cursor:pointer;transition:.15s;
+}
+.copy:hover{color:#fff;background:rgba(255,255,255,.13)}
+.copy.done{color:#6ee7a8;border-color:rgba(110,231,168,.4)}
+
+/* 数字条 */
+.stats{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  margin-top:56px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+}
+.stat{background:var(--card);padding:20px 22px}
+.stat b{display:block;font:700 25px/1.2 var(--mono);letter-spacing:-1px}
+.stat b small{font-size:14px;font-weight:600;letter-spacing:0;margin-left:2px}
+.stat span{display:block;font-size:12.5px;color:var(--muted);margin-top:5px}
+
+/* ── 对照 ──────────────────────────────── */
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.vs>div{
+  background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:24px 26px;
+}
+.vs h3{font-size:13px;letter-spacing:.3px;margin-bottom:14px;font-weight:700}
+.vs.before h3{color:var(--muted)}
+.vs ul{list-style:none;font-size:14px;line-height:1.5}
+.vs li{padding:7px 0 7px 20px;position:relative;color:var(--muted)}
+.vs li::before{
+  content:"";position:absolute;left:0;top:15px;
+  width:7px;height:1.5px;background:currentColor;opacity:.5;
+}
+.vs .to li{color:var(--ink)}
+.vs .to li::before{background:var(--accent);opacity:1;width:9px}
+
+/* ── 截图框 ────────────────────────────── */
+.shot{
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:var(--card);box-shadow:var(--shadow);
+}
+.shot-bar{
+  display:flex;align-items:center;gap:6px;padding:9px 13px;
+  background:var(--card);border-bottom:1px solid var(--line);
+}
+.shot-bar i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.shot-bar b{
+  flex:1;text-align:center;font:400 10.5px var(--mono);color:var(--muted);
+  letter-spacing:.3px;
+}
+.shot img{
+  display:block;width:100%;height:auto;
+  object-fit:cover;object-position:top center;background:var(--bg);
+}
+.shot.clip img{max-height:560px}
+
+/* 功能块:文案两栏 + 通栏大图 */
+.feat+.feat{margin-top:64px;padding-top:64px;border-top:1px solid var(--line)}
+.feat-txt{
+  display:grid;grid-template-columns:.9fr 1.1fr;gap:40px;
+  align-items:start;margin-bottom:26px;
+}
+.feat h3{font-size:20px;letter-spacing:-.25px;margin-bottom:10px}
+.feat-txt>div:first-child p{color:var(--muted);font-size:14.5px}
+.feat ul{list-style:none;font-size:14.2px}
+.feat li{padding:5px 0 5px 19px;position:relative;color:var(--muted)}
+.feat li::before{
+  content:"";position:absolute;left:0;top:14px;width:9px;height:1.5px;background:var(--accent);
+}
+.feat li b{color:var(--ink);font-weight:600}
+
+/* 小卡网格 */
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.mini{
+  background:var(--card);border:1px solid var(--line);
+  border-radius:12px;overflow:hidden;display:flex;flex-direction:column;
+}
+.mini-txt{padding:20px 22px 18px}
+.mini h4{font-size:15px;margin-bottom:6px}
+.mini p{font-size:13.5px;color:var(--muted);line-height:1.65}
+.mini figure{border-top:1px solid var(--line);overflow:hidden;height:190px;margin-top:auto}
+.mini figure img{
+  display:block;width:167%;max-width:none;
+  object-fit:cover;object-position:top left;
+}
+.also{
+  margin-top:20px;padding:16px 22px;border-radius:10px;
+  background:var(--card);border:1px solid var(--line);
+  font-size:13.6px;color:var(--muted);line-height:1.8;
+}
+.also b{color:var(--ink);font-weight:600}
+
+/* 原则 */
+.princ{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.princ>div{background:var(--card);padding:26px 28px}
+.princ b{
+  display:block;font:600 11px var(--mono);color:var(--accent);
+  letter-spacing:1.4px;margin-bottom:10px;
+}
+.princ h4{font-size:16px;margin-bottom:8px}
+.princ p{font-size:13.8px;color:var(--muted);line-height:1.7}
+.princ code{background:var(--chip);padding:1px 5px;border-radius:4px;color:var(--ink)}
+
+/* 引文 */
+.rule{
+  background:var(--card);border:1px solid var(--line);
+  border-left:2px solid var(--accent);border-radius:0 12px 12px 0;
+  padding:26px 30px;margin-bottom:14px;
+}
+.rule .src{
+  font:500 10.5px var(--mono);color:var(--muted);
+  letter-spacing:1.2px;text-transform:uppercase;margin-bottom:10px;
+}
+.rule p{font-size:15px;line-height:1.8}
+.rule strong{font-weight:700}
+.note{
+  margin-top:26px;padding:22px 26px;border-radius:12px;
+  background:var(--warn-bg);border:1px solid var(--line);
+  font-size:14.2px;line-height:1.8;color:var(--ink);
+}
+.note b{display:block;margin-bottom:6px}
+
+/* 步骤 */
+.steps{counter-reset:s;display:grid;gap:14px}
+.step{
+  display:grid;grid-template-columns:34px 1fr;gap:16px;align-items:start;
+  background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:22px 24px;
+}
+.step::before{
+  counter-increment:s;content:counter(s,decimal-leading-zero);
+  font:600 12px var(--mono);color:var(--accent);
+  border:1px solid var(--line);border-radius:7px;
+  height:28px;display:flex;align-items:center;justify-content:center;
+}
+.step h4{font-size:15px;margin-bottom:5px}
+.step p{font-size:13.8px;color:var(--muted)}
+.step pre{
+  margin-top:11px;background:var(--term-bg);color:var(--term-ink);
+  font:12.5px/1.9 var(--mono);padding:11px 14px;border-radius:8px;
+  overflow-x:auto;white-space:pre;
+}
+.step pre .c{color:#6b7280}
+
+/* 老实话 */
+.limits{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.limit{
+  border:1px solid var(--line);border-radius:10px;
+  padding:16px 19px;background:var(--card);
+}
+.limit b{display:block;font-size:14px;margin-bottom:4px}
+.limit span{font-size:13.3px;color:var(--muted);line-height:1.65}
+
+footer{border-top:1px solid var(--line);padding:44px 0 60px;font-size:13px;color:var(--muted)}
+.foot-in{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}
+footer b{color:var(--ink)}
+footer .r{text-align:right}
+
+@media(max-width:860px){
+  .wrap{padding:0 20px}
+  .sec{padding:56px 0}
+  .stats,.vs,.feat,.grid,.princ,.limits{grid-template-columns:1fr}
+  .feat{gap:26px}
+  .feat.rev>.feat-txt{order:0}
+  .feat+.feat{margin-top:48px}
+  .stats{gap:1px}
+  .shot.clip img{max-height:340px}
+  footer .r{text-align:left}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ HERO ══ -->
+<header>
+  <div class="wrap">
+    <div class="brandmark">
+      <b>售前工作台</b>
+      <span>Presales Workbench</span>
+    </div>
+
+    <h1>售前的一整条链路,<br>装在<em>你自己的磁盘</em>上</h1>
+
+    <p class="lede">
+      客户决策链、商机流水线、交付物生成、拜访纪要、知识库 —— 全部落成本地的
+      <b>Markdown 与 JSON</b>。AI 通过 Claude Code 在本机干活,
+      <b>基于你的真实资料,而不是编。</b>
+    </p>
+
+    <div class="tags">
+      <span class="tag on">MIT 开源</span>
+      <span class="tag">macOS</span>
+      <span class="tag">Python 标准库,零核心依赖</span>
+      <span class="tag">数据不出本机</span>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><b>bash</b></div>
+      <div class="term-body">
+        <button class="copy" id="cp">复制</button>
+<pre id="cmd"><span class="p">$</span> git clone https://github.com/mooncirclez/presales-workbench.git
+<span class="p">$</span> cd presales-workbench
+<span class="p">$</span> ./setup.sh <span class="c"># 体检 → 装依赖 → 建骨架 → 启动</span></pre>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>10</b><span>个工作面</span></div>
+      <div class="stat"><b>01–07</b><span>段交付物流水线</span></div>
+      <div class="stat"><b>0</b><span>个核心依赖</span></div>
+      <div class="stat"><b>1</b><span>条命令部署</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- ══ 01 它解决什么 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">01</div>
+      <div>
+        <h2>它解决什么问题</h2>
+        <p>售前的信息是碎的,而碎掉的代价要在报价、投标、交底的时候一次性还。</p>
+      </div>
+    </div>
+
+    <div class="vs">
+      <div class="before">
+        <h3>以前</h3>
+        <ul>
+          <li>资料散在几百个 PDF 和微信文件传输助手里</li>
+          <li>客户决策链记在脑子里,人一换就断</li>
+          <li>交付物每次从零开始写,上一版找不着</li>
+          <li>周报靠回忆拼凑,漏掉的都是风险</li>
+          <li>问 AI,它答得很流畅,但事实是编的</li>
+        </ul>
+      </div>
+      <div class="to">
+        <h3>现在</h3>
+        <ul>
+          <li>一个目录装下全部客户、商机、交付物、知识</li>
+          <li>决策链、KPI、组织架构结构化落盘,可检索</li>
+          <li>01–07 流水线:上传 / 套模板 / AI 生成三选一</li>
+          <li>风险由后端按规则算出来,不靠人记</li>
+          <li>AI 只能引用磁盘上真实存在的文件,缺就标</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 02 看板 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">02</div>
+      <div>
+        <h2>一眼看清盘子</h2>
+        <p>每个数字都由后端 <code>compute_dashboard()</code> 算一次,前端纯展示 —— 没有手工维护的统计表。</p>
+      </div>
+    </div>
+
+    <div class="shot">
+      <div class="shot-bar"><i></i><i></i><i></i><b>127.0.0.1:8917 — 智能看板</b></div>
+      <img src="img/dashboard.webp" alt="智能看板:客户数、进行中商机、商机总预算、累计签约等指标卡,左侧 To Do 列表,右侧规则化风险提示" loading="lazy">
+    </div>
+  </div>
+</section>
+
+<!-- ══ 03 核心能力 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">03</div>
+      <div>
+        <h2>核心能力</h2>
+        <p>不是九个互不相干的页面,是同一份数据的九个视角。</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-txt">
+        <div>
+          <h3>客户:不再只在脑子里</h3>
+          <p>把"这单谁说了算"变成可交接的结构化档案。</p>
+        </div>
+        <ul>
+          <li><b>决策链</b> —— 角色、联系方式、对我方的态度</li>
+          <li><b>客户 KPI</b> —— 目标 / 现状 / 我方方案如何支撑</li>
+          <li><b>组织架构</b> —— 树状维护,谁在哪条线上一目了然</li>
+          <li>缺失字段一律标 <code>【待补充】</code>,不装作知道</li>
+        </ul>
+      </div>
+      <div class="shot">
+        <div class="shot-bar"><i></i><i></i><i></i><b>客户档案</b></div>
+        <img src="img/customer-detail.webp" alt="客户详情页:决策链与联系人表格、客户 KPI、组织架构树、会议纪要与相关项目" loading="lazy">
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-txt">
+        <div>
+          <h3>项目:交付物有流水线</h3>
+          <p>01 需求场景 → 02 立项报告 → 03 POC → 04 毛利测算 → 05 SOW → 06 投标技术方案 → 07 合同评审。</p>
+        </div>
+        <ul>
+          <li>每段三个入口:<b>上传</b> / <b>从模板创建</b> / <b>AI 生成</b></li>
+          <li>模板是你自己上传的,版本你说了算</li>
+          <li>缺哪一段,看板的风险提示会直接点名</li>
+          <li>归档后合同额仍计入累计签约</li>
+        </ul>
+      </div>
+      <div class="shot">
+        <div class="shot-bar"><i></i><i></i><i></i><b>项目 · 交付物流水线</b></div>
+        <img src="img/project-detail.webp" alt="项目详情页:商务信息、项目纪要、协作动作,以及 01 到 07 的交付物流水线" loading="lazy">
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-txt">
+        <div>
+          <h3>技能与角色:让 AI 按你的方法论干活</h3>
+          <p>技能是一份方法论文档;把几个技能捆起来,就是一个"专家角色"。</p>
+        </div>
+        <ul>
+          <li>随包附带 <b>投标响应自检</b>、<b>拜访接待</b>、<b>会议纪要</b>、<b>知识 wiki</b></li>
+          <li>预置 <b>售前方案专家</b>、<b>客户拜访专家</b> 两个角色</li>
+          <li>可自然语言生成新技能,也可从第三方榜单导入</li>
+          <li>技能装在工作台本地,不污染全局配置</li>
+        </ul>
+      </div>
+      <div class="shot">
+        <div class="shot-bar"><i></i><i></i><i></i><b>技能 · 专家角色</b></div>
+        <img src="img/skills.webp" alt="技能页面:本地技能列表、专家角色配置与技能市场" loading="lazy">
+      </div>
+    </div>
+
+    <div class="feat">
+      <div class="feat-txt">
+        <div>
+          <h3>AI 任务:干活的,不是聊天的</h3>
+          <p>对工作台下一句指令,后台调用本机 <code>claude</code> CLI 执行,产出直接落进对应目录。</p>
+        </div>
+        <ul>
+          <li>可选<b>专家角色</b>执行,自动携带角色设定与技能上下文</li>
+          <li><b>定时任务</b>:每日晨报、每周周报到点自跑</li>
+          <li>任务按类型与时间分类检索,产出文件一键跳转</li>
+          <li>每次运行 = 一次真实 Claude 会话,用的是你自己的额度</li>
+        </ul>
+      </div>
+      <div class="shot">
+        <div class="shot-bar"><i></i><i></i><i></i><b>AI 任务</b></div>
+        <img src="img/ai.webp" alt="AI 任务页面:专家角色下拉、指令输入框、权限选择、定时任务与任务记录检索" loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 04 其余 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">04</div>
+      <div>
+        <h2>还有这些</h2>
+        <p>都挂在同一份数据上,不需要二次录入。</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="mini">
+        <div class="mini-txt">
+          <h4>纪要瀑布流</h4>
+          <p>一个项目从需求调研到合同评审的全部沟通记录,按时间倒序串成一条脉络。行动项自动流入 To Do 与协作,双向勾选。</p>
+        </div>
+        <figure><img src="img/timeline.webp" alt="纪要瀑布流:项目全部沟通记录按时间倒序排列" loading="lazy"></figure>
+      </div>
+
+      <div class="mini">
+        <div class="mini-txt">
+          <h4>协作</h4>
+          <p>售前 × 销售 / 产研 / 交付三条线。每个动作强制绑定项目,受阻与逾期自动上风险榜 —— 推不动的事没法悄悄消失。</p>
+        </div>
+        <figure><img src="img/collab.webp" alt="协作页面:三条协作线的动作列表与状态" loading="lazy"></figure>
+      </div>
+
+      <div class="mini">
+        <div class="mini-txt">
+          <h4>知识库</h4>
+          <p>任意层级自建目录。把 PDF / Word / PPT / Excel 提取成可检索文本 —— 不提取,AI 就读不了。可编译成互链 wiki。</p>
+        </div>
+        <figure><img src="img/knowledge.webp" alt="知识库页面:侧边栏目录树与文件列表" loading="lazy"></figure>
+      </div>
+
+      <div class="mini">
+        <div class="mini-txt">
+          <h4>场景库</h4>
+          <p>按行业沉淀业务场景:一段描述 + 一个 HTML 交互演示。客户现场即点即用,不用临时翻 PPT。</p>
+        </div>
+        <figure><img src="img/scenarios.webp" alt="场景库页面:按行业组织的业务场景列表" loading="lazy"></figure>
+      </div>
+    </div>
+
+    <p class="also">
+      <b>还有:</b>日历(月视图 + 一句话让 AI 建日程 + 到点 macOS 系统通知)、
+      项目归档(合同额仍计入累计签约)、模板管理(上传任意文档自动转成 Markdown 模板)、
+      回收站(删除可恢复)、周报(本地即时草稿 + AI 深度版)。
+    </p>
+  </div>
+</section>
+
+<!-- ══ 05 设计原则 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">05</div>
+      <div>
+        <h2>四条设计原则</h2>
+        <p>这些决定了它三年后还能不能用。</p>
+      </div>
+    </div>
+
+    <div class="princ">
+      <div>
+        <b>PRINCIPLE 01</b>
+        <h4>数据即文件</h4>
+        <p>客户档案是 <code>customers/&lt;客户&gt;/customer.json</code>,纪要是 Markdown。可以 git、可以 grep、可以用任何编辑器打开。<strong>工作台删了,资产还在。</strong></p>
+      </div>
+      <div>
+        <b>PRINCIPLE 02</b>
+        <h4>统计只在后端算一次</h4>
+        <p>看板的每个数字都出自 <code>compute_dashboard()</code>,前端不做二次计算。加一个指标只改一处,不会出现两个页面数字对不上。</p>
+      </div>
+      <div>
+        <b>PRINCIPLE 03</b>
+        <h4>AI 不许编</h4>
+        <p><code>CLAUDE.md</code> 里写死了铁律,并随仓库分发。客户事实、金额、承诺必须能追溯到具体文件,缺失一律标注,不允许根据文件名猜内容。</p>
+      </div>
+      <div>
+        <b>PRINCIPLE 04</b>
+        <h4>能力进插槽</h4>
+        <p>模板包、MCP、技能、AI 命令都是可替换的插件,由 <code>workbench.json</code> 统一登记。换公司只需换模板包 + 清空数据区。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 06 AI 不许编 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">06</div>
+      <div>
+        <h2>关于「AI 不许编」</h2>
+        <p>售前交付物里的一个编造数字,代价可能是一个标。所以这条不是建议,是硬约束 —— 下面两条原文来自随包分发的 <code>CLAUDE.md</code>。</p>
+      </div>
+    </div>
+
+    <div class="rule">
+      <div class="src">CLAUDE.md · 六、产出规范</div>
+      <p>金额、数据、客户事实<strong>必须可核对,绝不编造</strong>;缺信息留 <code>【待补充】</code>。对外承诺(范围 / SLA / 价格)标注"待商务确认"。</p>
+    </div>
+
+    <div class="rule">
+      <div class="src">CLAUDE.md · 3a. 读交付物</div>
+      <p><strong>两条路都失败就如实说读不出来,绝对不许根据文件名猜测内容</strong> —— 文件名与实际内容不符是常态。</p>
+    </div>
+
+    <div class="note">
+      <b>这条规则是被真实事故逼出来的。</b>
+      开发过程中遇到过一个名为「客户提供的POC验收标准.docx」的文件,内容其实是某厂商的解决方案文档。
+      如果 AI 顺着文件名往下写,整份 POC 报告的前提就是错的。
+      现在的做法是:二进制文档必须先提取成文本才允许引用,提取失败就明说读不出来。
+    </div>
+  </div>
+</section>
+
+<!-- ══ 07 快速开始 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">07</div>
+      <div>
+        <h2>快速开始</h2>
+        <p>两个硬性前提:<b>macOS</b>,以及已安装并登录的 <a href="https://claude.com/claude-code">Claude Code</a> CLI。其余都是可选的,缺了只降级。</p>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div>
+          <h4>先体检,不改动任何文件</h4>
+          <p>确认系统、Python、claude CLI 与可选依赖是否就位。任何一项不满足都会明确告诉你怎么修。</p>
+          <pre>./setup.sh --check</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>一条命令部署</h4>
+          <p>体检 → 询问是否安装可选依赖 → 建数据目录骨架 → 写入你的名字与公司 → 启动服务 → 自动开浏览器。</p>
+          <pre>./setup.sh              <span class="c"># 默认 8917 端口</span>
+PORT=8919 ./setup.sh    <span class="c"># 换端口</span></pre>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>清掉 demo 数据,换成你自己的</h4>
+          <p>仓库自带一套<strong>虚构</strong>示例数据(示例科技 / 示例银行),含故意留下的缺陷,用来演示风险提示怎么工作。在各页面用垃圾桶图标删掉即可 —— 删除进回收站,可恢复。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div>
+          <h4>把资料放进知识库</h4>
+          <p>丢进 <code>knowledge/my local knowledge/</code>,再到「知识库」页点「提取新增」。不提取,AI 读不了二进制文档。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 08 老实话 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">08</div>
+      <div>
+        <h2>老实话:它还不行的地方</h2>
+        <p>装之前先知道,比装完再发现好。</p>
+      </div>
+    </div>
+
+    <div class="limits">
+      <div class="limit"><b>单用户</b><span>无并发控制与鉴权,不适合多人同时读写同一份数据。</span></div>
+      <div class="limit"><b>仅 macOS</b><span>文档提取、系统通知、Word 导出依赖 textutil / osascript。</span></div>
+      <div class="limit"><b>无自动化测试</b><span>改动靠手工验证。</span></div>
+      <div class="limit"><b>数据量假设中小</b><span>全文搜索是暴力遍历,客户 / 项目上百后会变慢。</span></div>
+      <div class="limit"><b>AI 成本不可控</b><span>每次任务是一次完整 Claude 会话,无 token 统计。</span></div>
+      <div class="limit"><b>绑定 Claude</b><span>暂不支持其他模型。兼容 Anthropic 协议的接入在路线图上。</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-in">
+    <div>
+      <b>售前工作台 · Presales Workbench</b><br>
+      MIT License · © 2026 mooncircle.yueyuan
+    </div>
+    <div class="r">
+      数据默认只绑 127.0.0.1,不对外暴露<br>
+      你的客户资料属于敏感信息 —— 做版本管理请用<b>私有</b>仓库
+    </div>
+  </div>
+</footer>
+
+<script>
+document.getElementById('cp').addEventListener('click', function(){
+  var t = document.getElementById('cmd').innerText
+            .split('\n')
+            .map(function(l){ return l.replace(/^\$\s?/, '').replace(/\s*#.*$/, '').trim(); })
+            .filter(Boolean)
+            .join('\n');
+  var self = this;
+  navigator.clipboard.writeText(t).then(function(){
+    self.textContent = '已复制'; self.classList.add('done');
+    setTimeout(function(){ self.textContent = '复制'; self.classList.remove('done'); }, 1600);
+  }).catch(function(){ self.textContent = '复制失败'; });
+});
+</script>
+</body>
+</html>

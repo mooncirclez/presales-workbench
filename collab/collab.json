@@ -1,0 +1,46 @@
+{
+  "items": [
+    {
+      "id": "demo0001",
+      "track": "sales",
+      "type": "项目策略对齐",
+      "project": "示例科技-智能客服平台一期",
+      "title": "与销售对齐 POC 后的报价策略与竞争打法",
+      "owner_us": "我",
+      "owner_peer": "李销售",
+      "due": "2026-07-30",
+      "status": "进行中",
+      "mandays": "",
+      "note": "友商 A 是现有供应商,需准备替换成本论证",
+      "created": "2026-07-24 14:00:00"
+    },
+    {
+      "id": "demo0002",
+      "track": "rd",
+      "type": "需求人天评估",
+      "project": "示例科技-智能客服平台一期",
+      "title": "信创环境适配与工单分流定制的人天评估",
+      "owner_us": "我",
+      "owner_peer": "周产研",
+      "due": "2026-07-31",
+      "status": "待启动",
+      "mandays": "15",
+      "note": "",
+      "created": "2026-07-25 10:00:00"
+    },
+    {
+      "id": "demo0003",
+      "track": "delivery",
+      "type": "SOW 交接",
+      "project": "示例银行-知识库建设",
+      "title": "SOW 范围与边界向交付 PM 交底",
+      "owner_us": "我",
+      "owner_peer": "吴交付",
+      "due": "2026-07-25",
+      "status": "受阻",
+      "mandays": "",
+      "note": "交付 PM 本周出差,顺延到下周一",
+      "created": "2026-07-21 16:00:00"
+    }
+  ]
+}
