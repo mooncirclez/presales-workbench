@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>售前工作台 · Presales Workbench</title>
-<meta name="description" content="售前工程师的本地 AI 工作台:客户决策链、商机流水线、交付物生成、知识库。数据是你磁盘上的 Markdown,AI 通过 Claude Code 跑在本机。">
+<meta name="description" content="售前工程师的本地 AI 工作台。客户档案落盘即代号化,真名只存本机一处;AI 可读范围是 permissions.deny 硬边界而非提示词约定 —— 在保住客户数据的前提下用公网大模型。">
 <meta property="og:title" content="售前工作台 · Presales Workbench">
-<meta property="og:description" content="售前的一整条链路,装在你自己的磁盘上。">
+<meta property="og:description" content="用得起公网大模型,又不把客户名字交出去。写入即代号化 + 可读范围硬隔离。">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f3d99'/><path d='M8 21V11h3.4l2.6 6 2.6-6H20v10h-2.4v-6.2L15.2 21h-2.4l-2.4-6.2V21z' fill='%23fff'/></svg>">
 <style>
@@ -515,14 +515,17 @@ footer .r{text-align:right}
     <div class="feat">
       <div class="feat-txt">
         <div>
-          <h3>AI 任务:干活的,不是聊天的</h3>
-          <p>对工作台下一句指令,后台调用本机 <code>claude</code> CLI 执行,产出直接落进对应目录。</p>
+          <h3>AI 任务:对话着把活干了</h3>
+          <p>像聊天一样下指令,产出直接落进对应目录。追问接得上上下文 ——
+             底层取回 <code>session_id</code> 再 <code>--resume</code>,不是把气泡摞在一起。</p>
         </div>
         <ul>
-          <li>可选<b>专家角色</b>执行,自动携带角色设定与技能上下文</li>
-          <li><b>定时任务</b>:每日晨报、每周周报到点自跑</li>
-          <li>任务按类型与时间分类检索,产出文件一键跳转</li>
-          <li>每次运行 = 一次真实 Claude 会话,用的是你自己的额度</li>
+          <li><b>换模型、换供应商</b>:opus / sonnet / fable / haiku 随切;
+              也能填自己的 DeepSeek / Kimi key —— <b>没有 Claude 订阅照样用全部功能</b></li>
+          <li>状态细到<b>完成 / 中断 / 超时 / 失败</b>。被权限拦下的任务不会假装完成,
+              会写明卡在哪、可一键<b>重试并续上原对话</b></li>
+          <li>每条显示<b>耗时、token、花费</b>,额度花在哪一目了然</li>
+          <li>可选<b>专家角色</b>执行;<b>定时任务</b>到点自跑</li>
         </ul>
       </div>
       <div class="shot">
@@ -711,8 +714,12 @@ PORT=8919 ./setup.sh    <span class="c"># 换端口</span></pre>
       <div class="limit"><b>仅 macOS</b><span>文档提取、系统通知、Word 导出依赖 textutil / osascript。</span></div>
       <div class="limit"><b>无自动化测试</b><span>改动靠手工验证。</span></div>
       <div class="limit"><b>数据量假设中小</b><span>全文搜索是暴力遍历,客户 / 项目上百后会变慢。</span></div>
-      <div class="limit"><b>AI 成本不可控</b><span>每次任务是一次完整 Claude 会话,无 token 统计。</span></div>
-      <div class="limit"><b>绑定 Claude</b><span>暂不支持其他模型。兼容 Anthropic 协议的接入在路线图上。</span></div>
+      <div class="limit"><b>成本可见但不设限</b><span>每轮显示耗时、token 与花费,但没有额度上限或超额拦截。</span></div>
+      <div class="limit"><b>代号是可读假名</b><span>示例银行 → sl银行,保留行业特征便于自己阅读 ——
+        代价是在特定行业内<b>有可能被反推</b>。要更强保护得换不可读编号。</span></div>
+      <div class="limit"><b>脱敏范围有边界</b><span>只覆盖客户名、客户方联系人与地址。
+        <b>金额、方案内容、技术细节不脱敏</b>,仍会随指令发给模型。</span></div>
+      <div class="limit"><b>导出不自动还原</b><span>交付给客户前需拿替换清单做一次人工处理 —— 这是有意为之。</span></div>
     </div>
   </div>
 </section>

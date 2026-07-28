@@ -8,7 +8,7 @@ cd presales-workbench
 ./setup.sh
 ```
 
-📋 **[更新日志](CHANGELOG.md)** · 📄 **[项目介绍页(含界面截图)](docs/index.html)** —— 仓库 Settings → Pages 选 `main` 分支 `/docs` 目录即可发布为网站。
+📋 **[更新日志](CHANGELOG.md)** · 📄 **[项目介绍页(含界面截图)](docs/index.html)** · 🖼 **[一图看懂](docs/img/poster-security.png)** —— 仓库 Settings → Pages 选 `main` 分支 `/docs` 目录即可发布为网站。
 
 ---
 
