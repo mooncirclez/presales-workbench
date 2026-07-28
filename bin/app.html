@@ -619,7 +619,8 @@ function paintSide(){
   $("#sidefoot").innerHTML=
     `<span class="dot ${c.available?"ok":"bad"}"></span>claude ${c.available?"可用":"未登录"}<br>`+
     mcpTxt+`<br><span class="dot ok"></span>${esc(S.pack.id)}@${esc(S.pack.version)}`+
-    `<br><a class="f" href="#/trash" style="font-size:11px">回收站</a>`;
+    `<br><a class="f" href="#/trash" style="font-size:11px">回收站</a>`+
+    (S.config.version?`<span class="muted" style="font-size:11px"> · 工作台 v${esc(S.config.version)}</span>`:"");
   document.querySelectorAll("#side a").forEach(a=>{
     const r=a.dataset.r,h=location.hash||"#/";
     const on=(r==="dash"&&(h==="#/"||h==="#"))||(r!=="dash"&&h.startsWith("#/"+r))||

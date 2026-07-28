@@ -2661,6 +2661,7 @@ class Handler(BaseHTTPRequestHandler):
                                            meetings=meetings, mtodos=mtodos),
             "meetings": meetings,
             "config": {"name": c.get("name"), "owner": c.get("owner"),
+                       "version": c.get("version", ""),
                        "company": c.get("company", {}).get("name", ""),
                        "stages": c.get("project_stages",
                                        ["调研", "方案", "POC", "商务", "投标", "签约", "赢单", "丢单"]),
