@@ -40,6 +40,9 @@ border-left:2px solid transparent;transition:color .15s}
 #side a:hover{color:var(--ink)}
 #side .foot{margin-top:auto;font-size:11px;color:var(--muted);padding:14px 22px 0;
 border-top:1px solid var(--line);line-height:2;margin-left:0}
+#side .flinks{display:flex;flex-direction:column;gap:1px;margin:8px 0 6px}
+#side .flinks a{font-size:11.5px;color:var(--muted);cursor:pointer;text-decoration:none}
+#side .flinks a:hover{color:var(--accent)}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .dot.ok{background:var(--ok)}.dot.off{background:var(--warn)}.dot.bad{background:var(--bad)}
 /* ---- main ---- */
@@ -621,10 +624,13 @@ function paintSide(){
   $("#sidefoot").innerHTML=
     `<span class="dot ${c.available?"ok":"bad"}"></span>claude ${c.available?"可用":"未登录"}<br>`+
     mcpTxt+`<br><span class="dot ok"></span>${esc(S.pack.id)}@${esc(S.pack.version)}`+
-    `<br><a class="f" href="#/trash" style="font-size:11px">回收站</a>`+
-    `<span class="muted" style="font-size:11px"> · </span>`+
-    `<a class="f" href="#/mask" style="font-size:11px">映射表</a>`+
-    (S.config.version?`<span class="muted" style="font-size:11px"> · 工作台 v${esc(S.config.version)}</span>`:"");
+    // 三个次级入口各占一行:侧栏只有 198px 宽,并排会把分隔符挤到单独一行
+    `<div class="flinks">`+
+      `<a class="f" onclick="goInbox()">收件箱${S.inbox.length?` (${S.inbox.length})`:""}</a>`+
+      `<a class="f" href="#/trash">回收站</a>`+
+      `<a class="f" href="#/mask">映射表</a>`+
+    `</div>`+
+    (S.config.version?`<span class="muted" style="font-size:11px">工作台 v${esc(S.config.version)}</span>`:"");
   document.querySelectorAll("#side a").forEach(a=>{
     const r=a.dataset.r,h=location.hash||"#/";
     const on=(r==="dash"&&(h==="#/"||h==="#"))||(r!=="dash"&&h.startsWith("#/"+r))||
@@ -1234,7 +1240,8 @@ async function paintKbWhitelist(){
      :`<div class="small muted" style="margin:9px 0">知识库还没有子目录</div>`}
     <div class="small muted" style="line-height:1.8">
       两列<b>互相独立,都由你决定,程序不推断</b>:<br>
-      · <b>AI 可读</b> —— 未勾的目录连同其提取文本被硬性拒绝(不是靠提示词约定)<br>
+      · <b>AI 可读</b> —— 未勾的目录连同其提取文本被硬性拒绝,
+        <b>Read / Grep / Glob 一并受这条路径规则约束</b>(不是靠提示词约定)<br>
       · <b>提取时脱敏</b> —— 勾中的目录,提取文本里出现的名字<b>按映射表</b>换成假名;
         表里没有的一律不动。公开发表过的材料不必勾。<br>
       改完立刻生效;<b>但已提取的文本不会自动重跑</b>,改了要点「全量提取」。</div>`;}
@@ -1260,8 +1267,8 @@ async function paintBashToggle(){
   cb.checked=!!d.allow_bash;
   const w=$("#bashWarn");
   if(w)w.innerHTML=d.allow_bash?`<p class="small" style="color:var(--warn);margin:0 0 8px">
-    已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b>(那些内容改不掉)。
-    生成 xlsx 之类的任务需要它,用完建议关掉。</p>`:"";}
+    已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b>(原件内容改不掉),
+    也能用 cat 读到被路径规则拒绝的文本。生成 xlsx 之类的任务需要它,用完建议关掉。</p>`:"";}
 
 async function setAllowBash(on){
   try{await api("/api/mask-config",{allow_bash:on});MASKCFG=null;await paintBashToggle();
@@ -1546,6 +1553,12 @@ async function restoreCustomer(id){
     await refresh();route();toast("已恢复到客户列表");}
   catch(e){toast(e.message,5000);}}
 
+/* 侧栏「收件箱」入口:跳到知识库页并选中 inbox。
+   原来只在知识库树里、且**空的时候整条不渲染** —— 形成死结:
+   想用它得先看到它,想看到它得先往里放文件,而放文件的入口就在它身上。 */
+function goInbox(){KN.sel="@inbox";location.hash="#/knowledge";
+  if(location.hash==="#/knowledge")route();}
+
 function delBtn(onclick,title){
   return `<button class="del" title="${attr(title||"删除")}" onclick="${onclick}">`+
     `<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>`+
@@ -1778,19 +1791,26 @@ function knFileRow(f,showDir){
 function vKnowledge(){
   const {root,filesByDir}=knBuild();
   const isInbox=KN.sel==="@inbox";
-  const inboxNode=S.inbox.length?`<div class="tn ${isInbox?"sel":""}" data-p="@inbox"
+  const inboxNode=`<div class="tn ${isInbox?"sel":""}" data-p="@inbox"
     style="padding-left:6px;margin-top:6px;border-top:1px solid var(--line);padding-top:9px">
-    <span class="chev">·</span>收件箱(${S.inbox.length})</div>`:"";
+    <span class="chev">·</span>收件箱(${S.inbox.length})</div>`;
   const treeHtml=knNode(root,0)+inboxNode;
   // 右侧:当前文件夹
   let right;
   if(isInbox){
-    right=`<div class="card"><h3>inbox / 待整理 <span class="tag y">${S.inbox.length}</span></h3>
-    <ul class="plain">${S.inbox.map(f=>knFileRow(f,true)).join("")}</ul>
+    right=`<div class="card"><h3>收件箱 / 待整理 <span class="tag ${S.inbox.length?"y":"o"}">${S.inbox.length}</span></h3>
+    ${S.inbox.length
+      ? `<ul class="plain">${S.inbox.map(f=>knFileRow(f,true)).join("")}</ul>`
+      : `<div class="small muted" style="line-height:1.9;margin:6px 0 2px">
+          <b>临时中转区 —— 不用决定放哪,先扔进来。</b><br>
+          随手收到的文件(客户发来的资料、会上拍的材料、下载的报告)先丢这里,
+          回头点「AI 整理收件箱」让它按目录规范归类到知识库或对应客户/项目,或者你自己整理。<br>
+          <span style="color:var(--warn)">整理完记得清空 —— 这里是中转站,不是仓库。</span>
+        </div>`}
     <div class="bar" style="margin:10px 0 0">
-      <button class="sm" onclick="mAI('整理收件箱',
+      <button class="sm" ${S.inbox.length?"":"disabled"} onclick="mAI('整理收件箱',
         '阅读 inbox/ 下所有文件,按 CLAUDE.md 目录规范归类到 knowledge/ 或对应客户/项目目录,整理完报告每个文件去向。')">AI 整理收件箱</button>
-      <button class="sm" onclick="openLocal('inbox')">在 Finder 打开</button></div></div>`;
+      <button class="sm" onclick="openLocal('inbox')">在 Finder 打开(把文件拖进去)</button></div></div>`;
   }else{
     const files=(filesByDir[KN.sel]||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,"zh"));
     right=`<div class="card"><h3 style="word-break:break-all">${esc(KN.sel)}
@@ -2505,7 +2525,7 @@ function vAI(){
             m==="bypassPermissions"?"全部放行(推荐)":m==="acceptEdits"?"仅文件编辑":"只规划不动手"}</option>`).join("")}
       </select>
       <span class="sp"></span>
-      <label class="small muted" title="关闭时 AI 拿不到 Bash,因而无法用 python-docx/cat 直读二进制文档里的真名">
+      <label class="small muted" title="Bash 是读二进制原件(docx/xlsx)和跑脚本的唯一途径。目录边界由上方的路径规则管,不靠这个开关">
         <input type="checkbox" id="aiBash" onchange="setAllowBash(this.checked)"
           style="width:auto;vertical-align:-1px"> 允许 Bash</label>
       <button class="sm" onclick="api('/api/open-claude',{}).then(()=>toast('已打开 Claude App'))

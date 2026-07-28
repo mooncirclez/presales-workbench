@@ -1612,6 +1612,9 @@ def ai_deny_rules(c):
     deny = [
         "Read(./.mask/**)",       # 客户真名映射表 —— 读到一次等于全部客户裸奔
         "Read(./.workbench/**)",  # 第三方 API key(明文)、邮箱密码、任务日志
+        # 回收站里躺着的是**删除那一刻的原样副本**。脱敏之前建的数据删掉后
+        # 仍带真名,审计时实测有 4 个这类文件 AI 读得到。
+        "Read(./.trash/**)",
     ]
     # 只挡原文是不够的:knowledge/.extracted/ 存的是同一批资料的**提取全文**,
     # knowledge/wiki/ 是它们编译出来的知识页。实测漏掉这两处时,Grep 一把命中 180
@@ -1743,8 +1746,12 @@ def run_job(job_id, cmd, env=None):
                 status = "blocked"
                 tools = "、".join(sorted({d.get("tool_name") or "?" for d in denials}))
                 extra["stop_detail"] = f"被权限规则拦下:{tools}"
-                hint = ("AI 想用的工具被「知识库 → AI 可读范围」的规则挡住了。"
-                        "去勾上它需要的目录后点「重试」;grep 类操作还需要放通 Bash。")
+                # Grep / Glob 是 Claude Code 的内置工具,不经过 Bash ——
+                # 挡住它们的是 Read(路径) 规则,不是 Bash 开关。放通目录即可。
+                hint = ("AI 想用的工具被「知识库 → AI 可读范围」的规则挡住了 —— "
+                        "Read / Grep / Glob 都受同一条路径规则约束。"
+                        "去勾上它需要的目录后点「重试」。"
+                        "只有读 docx/xlsx 原件、跑脚本生成表格这类才需要额外放通 Bash。")
             elif (env_j.get("subtype") or "") == "error_max_turns":
                 status = "blocked"
                 extra["stop_detail"] = "达到轮次上限,任务没走完"
@@ -2666,6 +2673,11 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/schedule":
                 op = body.get("op")
                 it = body.get("schedule") or {}
+                # 定时任务的提示词到点会原样送给 AI —— 和 /api/ai 一样要先脱敏,
+                # 否则「每周汇总示例银行的进展」这种指令会把真名带出去
+                for _f in ("prompt", "title"):
+                    if isinstance(it.get(_f), str):
+                        it[_f] = mask_in(it[_f])
                 with SCHED_LOCK:
                     items = load_schedules()
                     if op == "add":
