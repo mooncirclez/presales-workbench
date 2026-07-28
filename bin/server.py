@@ -1480,6 +1480,8 @@ def run_job(job_id, cmd, env=None):
     except FileNotFoundError:
         status, result, hint = "failed", "找不到 claude CLI", "请先安装 Claude Code CLI 并登录。"
     with JOBS_LOCK:
+        if job_id not in JOBS:      # 运行途中被删掉了,别把记录又写回来
+            return
         JOBS[job_id].update({"status": status, "ended": now_iso(),
                              "output": result[-8000:], "hint": hint,
                              "artifacts": extract_artifacts(result)})
@@ -1489,6 +1491,20 @@ def run_job(job_id, cmd, env=None):
         JOBS_DIR.mkdir(exist_ok=True)
         with open(JOBS_LOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def save_jobs_log():
+    """删除/归档后重写日志 —— 日志本是追加式的,不重写下次启动会把删掉的任务读回来。"""
+    with JOBS_LOCK:
+        recs = sorted(JOBS.values(), key=lambda j: j.get("created", ""))
+        body = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in recs)
+    try:
+        JOBS_DIR.mkdir(exist_ok=True)
+        tmp = JOBS_LOG.with_suffix(".tmp")
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(JOBS_LOG)       # 原子替换,中途崩掉不会留下半截日志
     except OSError:
         pass
 
@@ -1879,9 +1895,13 @@ class Handler(BaseHTTPRequestHandler):
                 st = q.get("status") or ""
                 since = q.get("since") or ""      # YYYY-MM-DD
                 limit = min(int(q.get("limit") or 60), 300)
+                want_arch = q.get("archived") == "1"
                 with JOBS_LOCK:
-                    allj = sorted(JOBS.values(), key=lambda j: j.get("created", ""),
-                                  reverse=True)
+                    everyj = sorted(JOBS.values(), key=lambda j: j.get("created", ""),
+                                    reverse=True)
+                n_arch = sum(1 for j in everyj if j.get("archived"))
+                # 归档任务默认不进列表(但仍留在它所属的对话里)
+                allj = [j for j in everyj if bool(j.get("archived")) == want_arch]
                 counts = {}
                 for j in allj:
                     counts[j.get("category", "other")] = \
@@ -1900,6 +1920,7 @@ class Handler(BaseHTTPRequestHandler):
                     sel.append(j)
                 self._send(200, {"jobs": sel[:limit], "total": len(allj),
                                  "matched": len(sel), "counts": counts,
+                                 "archived_total": n_arch, "archived_view": want_arch,
                                  "categories": JOB_CATEGORIES})
             else:
                 self._send(404, {"error": "not found"})
@@ -2475,6 +2496,46 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"job": job})
             elif u.path == "/api/chat-new":
                 self._send(200, {"ok": True, "chat_id": uuid.uuid4().hex[:12]})
+            elif u.path == "/api/job":
+                op = body.get("op") or ""
+                jid = (body.get("id") or "").strip()
+                n = 0
+                with JOBS_LOCK:
+                    if op in ("archive", "unarchive"):
+                        j = JOBS.get(jid)
+                        if not j:
+                            raise FileNotFoundError("任务不存在(可能已被删除)")
+                        if j.get("status") in ("queued", "running"):
+                            raise ValueError("任务还在运行,跑完再归档")
+                        j["archived"] = (op == "archive")
+                        n = 1
+                    elif op == "delete":
+                        j = JOBS.get(jid)
+                        if not j:
+                            raise FileNotFoundError("任务不存在")
+                        if j.get("status") in ("queued", "running"):
+                            raise ValueError("任务还在运行,不能删除")
+                        del JOBS[jid]
+                        n = 1
+                    elif op == "delete-chat":
+                        cid = (body.get("chat_id") or "").strip()
+                        if not cid:
+                            raise ValueError("缺少 chat_id")
+                        tgt = [k for k, v in JOBS.items() if v.get("chat_id") == cid]
+                        if any(JOBS[k].get("status") in ("queued", "running") for k in tgt):
+                            raise ValueError("该对话还有任务在跑,跑完再删")
+                        for k in tgt:
+                            del JOBS[k]
+                        n = len(tgt)
+                    elif op == "clear-archived":
+                        tgt = [k for k, v in JOBS.items() if v.get("archived")]
+                        for k in tgt:
+                            del JOBS[k]
+                        n = len(tgt)
+                    else:
+                        raise ValueError("op 须为 archive/unarchive/delete/delete-chat/clear-archived")
+                save_jobs_log()
+                self._send(200, {"ok": True, "affected": n})
             elif u.path == "/api/ai-quick":
                 # 同步小任务:生成一段文本直接返回(如定时任务指令改写),不进任务队列
                 prompt = (body.get("prompt") or "").strip()

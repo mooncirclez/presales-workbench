@@ -511,10 +511,11 @@ async function doAI(title){try{
   closeModal();toast("AI 任务已提交");startPoll();
   if(location.hash==="#/ai")route();}catch(e){toast(e.message);}}
 
-const JF={cat:"",status:"",q:"",since:""};
+const JF={cat:"",status:"",q:"",since:"",archived:0};
 function jobQuery(){const p=new URLSearchParams();
   if(JF.cat)p.set("cat",JF.cat); if(JF.status)p.set("status",JF.status);
   if(JF.q)p.set("q",JF.q); if(JF.since)p.set("since",JF.since);
+  if(JF.archived)p.set("archived","1");
   const s=p.toString();return "/api/jobs"+(s?"?"+s:"");}
 async function pollJobs(){try{
     const j=await api(jobQuery());S._jobs=j.jobs;S._jobmeta=j;
@@ -527,7 +528,59 @@ async function pollJobs(){try{
       paintChat();}
     if(!running){clearInterval(pollTimer);pollTimer=null;}
   }catch(e){}}
-function jfSet(k,v){JF[k]=v;pollJobs();}
+function jfSet(k,v){JF[k]=v;if(k==="archived")JF.cat="";pollJobs();}
+
+/* 任务归档/删除。归档只是收起来(仍留在它所属的对话里);删除是真删记录 ——
+   回收站存的是文件,任务是 .workbench/jobs.jsonl 里的记录,进不了回收站,所以要问一次。 */
+async function jobOp(op,id){try{
+  await api("/api/job",{op:op,id:id});
+  pollJobs();loadChat();
+  toast(op==="archive"?"已归档 —— 在筛选栏「已归档」里可以找回":"已移回任务列表");
+}catch(e){toast(e.message,4500);}}
+
+function delJob(id){
+  const j=(S._jobs||[]).find(x=>x.id===id)||{};
+  modal(`<h3>删除任务记录</h3>
+  <p class="small"><b>${esc(j.title||id)}</b></p>
+  <p class="small muted">任务记录不是文件,<b>不会进回收站,删了找不回来</b>。
+    只是想让列表清爽的话,用「归档」更合适。</p>
+  <p class="small muted">已生成的产出文件不受影响,仍在原目录。</p>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="pri" onclick="doDelJob('${attr(id)}')">确认删除</button></div>`);}
+
+async function doDelJob(id){try{
+  await api("/api/job",{op:"delete",id:id});
+  closeModal();pollJobs();loadChat();toast("任务记录已删除");
+}catch(e){toast(e.message,4500);}}
+
+function clearArchivedJobs(){
+  const n=(S._jobmeta||{}).archived_total||0;
+  modal(`<h3>清空已归档任务</h3>
+  <p class="small">将永久删除 <b>${n}</b> 条已归档任务记录,不进回收站、无法恢复。</p>
+  <p class="small muted">已生成的产出文件不受影响。</p>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="pri" onclick="doClearArchived()">确认清空</button></div>`);}
+
+async function doClearArchived(){try{
+  const r=await api("/api/job",{op:"clear-archived"});
+  closeModal();JF.archived=0;pollJobs();loadChat();
+  toast(`已清空 ${r.affected} 条归档任务`);
+}catch(e){toast(e.message,4500);}}
+
+function delChat(){
+  if(!CHAT.id||!CHAT.turns.length)return toast("当前没有可删除的对话");
+  modal(`<h3>删除整条对话</h3>
+  <p class="small">将删除这条对话的 <b>${CHAT.turns.length}</b> 轮任务记录,不进回收站、无法恢复。</p>
+  <p class="small muted">对话期间生成的文件不受影响,仍在原目录。</p>
+  <div class="btns"><button onclick="closeModal()">取消</button>
+  <button class="pri" onclick="doDelChat()">确认删除</button></div>`);}
+
+async function doDelChat(){try{
+  await api("/api/job",{op:"delete-chat",chat_id:CHAT.id});
+  closeModal();CHAT.id="";CHAT.turns=[];CHAT.pending=null;
+  localStorage.removeItem("wb_chat");
+  await loadChat();pollJobs();route();toast("对话已删除");
+}catch(e){toast(e.message,4500);}}
 function paintJobFilter(){
   const el=$("#jobfilter");if(!el)return;
   const m=S._jobmeta||{};const cats=m.categories||{};const cnt=m.counts||{};
@@ -546,6 +599,10 @@ function paintJobFilter(){
     ${(JF.q||JF.cat||JF.status||JF.since)?
       `<button class="sm" onclick="JF.cat='';JF.status='';JF.q='';JF.since='';pollJobs()">清除</button>`:""}
     <span class="sp"></span>
+    ${m.archived_total?`<button class="sm ${JF.archived?"on":""}"
+      onclick="jfSet('archived',${JF.archived?'0':'1'})">${JF.archived?"← 回到任务列表":`已归档 ${m.archived_total}`}</button>`:""}
+    ${JF.archived&&m.archived_total?`<button class="sm" onclick="clearArchivedJobs()"
+      title="永久删除全部已归档任务">清空已归档</button>`:""}
     <span class="small muted">${m.matched===m.total?`共 ${m.total} 条`:`${m.matched} / ${m.total} 条`}</span>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">
@@ -2209,6 +2266,7 @@ function vAI(){
     <div class="bar" style="margin-bottom:10px">
       <button class="sm" onclick="newChat()">＋ 新对话</button>
       <span id="chatsel"></span>${/* 对话列表异步到达,由 paintChat 填,避免首屏空白 */""}
+      <span id="chatdel"></span>
       <label class="small muted">专家角色&nbsp;</label>
       <select id="aiRole" onchange="AIROLE=this.value">${opts}</select>
       <span class="sp"></span>
@@ -2490,6 +2548,8 @@ function paintChat(){
       return `<option value="${attr(ch.id)}" ${ch.id===CHAT.id?"selected":""}
         >${esc(t.length>14?t.slice(0,14)+"…":t)}${ch.turns>1?` · ${ch.turns}轮`:""}</option>`;}
       ).join("")}</select>`:"";
+  const dl=$("#chatdel");
+  if(dl)dl.innerHTML=CHAT.turns.length?delBtn("delChat()","删除整条对话"):"";
   const el=$("#thread");if(!el)return;
   const rows=[];
   for(const t of CHAT.turns){
@@ -2529,10 +2589,14 @@ function paintJobs(){
       const n=a.split("/").pop(),ed=/\.(md|txt|json|csv)$/i.test(n);
       return `<a class="f small" ${ed?`href="${edLink(a)}"`:`onclick="openLocal('${attr(a)}')"`}
         title="${attr(a)}">${extChip(n)} ${esc(n)}</a>`;}).join("");
+    const busy=j.status==="queued"||j.status==="running";
     return `<div class="job"><div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
       ${st}${j.category&&cats[j.category]?`<span class="tag o">${esc(cats[j.category])}</span>`:""}
       <b class="small">${esc(j.title)}</b><span style="flex:1"></span>
-      <span class="mono muted">${esc(j.created||"")}</span></div>
+      <span class="mono muted">${esc(j.created||"")}</span>
+      ${busy?"":`<button class="sm" title="${JF.archived?"移回任务列表":"收起到已归档,不删内容"}"
+        onclick="jobOp('${JF.archived?"unarchive":"archive"}','${attr(j.id)}')"
+        >${JF.archived?"取消归档":"归档"}</button>`+delBtn(`delJob('${attr(j.id)}')`,"永久删除该任务记录")}</div>
       ${arts?`<div class="arts">📎 产出:${arts}</div>`:""}
       ${j.hint?`<div class="small" style="color:var(--bad);margin-top:5px">${esc(j.hint)}</div>`:""}
       ${/未获批|无权限|permission denied|被拒|拦下/.test(j.output||"")?
