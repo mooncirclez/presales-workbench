@@ -19,7 +19,10 @@ cd presales-workbench
 | 前提 | 说明 |
 |---|---|
 | **macOS** | 文档提取、系统通知、Word 导出依赖 `textutil` / `osascript` / `open` 等 macOS 命令。**Windows 与 Linux 暂不支持**(见[路线图](#路线图)) |
-| **[Claude Code](https://claude.com/claude-code) CLI 已安装并登录** | 工作台的全部 AI 能力(生成交付物、写周报、编译知识库)都通过它执行。装好后运行 `claude` 并输入 `/login` |
+| **[Claude Code](https://claude.com/claude-code) CLI 已安装** | 工作台的全部 AI 能力(生成交付物、写周报、编译知识库)都通过它执行。装好后运行 `claude` 并输入 `/login` |
+
+> **没有 Claude 订阅?** CLI 本身免费开源、不需要 Anthropic 账号。在「AI 任务 → 模型与供应商」填自己的
+> DeepSeek / Kimi API key 即可用全部 AI 功能 —— 见 [切换模型与供应商](#切换模型与供应商)。
 
 其余都是可选的(缺了只降级,不影响核心功能):Python 3.9+(macOS 自带)、`pdftotext`、`python-docx` / `openpyxl` / `python-pptx`。
 
@@ -46,7 +49,32 @@ cd presales-workbench
 | **场景库** | 按行业沉淀业务场景:描述 + HTML 交互演示,客户现场即点即用 |
 | **技能** | 售前技能库(自然语言生成 / 第三方导入 / 技能市场);**多技能组合为「专家角色」**,AI 任务按角色执行 |
 | **知识库** | 任意层级自建目录;**把 PDF/Word/PPT/Excel 提取成可检索文本**(不提取则 AI 读不了);编译成互链 wiki 知识页;全文搜索 |
-| **AI 任务** | 自由指令 / 按角色执行 / **定时任务**;任务分类与检索;产出文件一键跳转 |
+| **AI 任务** | 自由指令 / 按角色执行 / **定时任务**;任务分类与检索;产出文件一键跳转;**模型与供应商切换**(Claude 各档模型 / DeepSeek / Kimi / 自建网关)+ 一键连通性测试 |
+
+## 切换模型与供应商
+
+在「AI 任务 → 模型与供应商」里改,两件事互相独立:
+
+**模型** —— 走官方时下拉可选 `opus` / `sonnet` / `fable` / `haiku`,留空则跟随你 claude CLI 自身的设置。
+本质是给命令加 `--model`,不影响任何其他能力。
+
+**供应商** —— 工作台不自研 API 适配器,而是给 claude CLI 注入 Anthropic 兼容协议的环境变量
+(`ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL`)。
+**CLI 原封不动,后面换成别家模型在跑,读写文件、Skills、多轮等 agent 能力一个不丢。**
+
+| 供应商 | BASE_URL | 模型名示例 |
+|---|---|---|
+| Anthropic 官方 | 不填,用 `claude login` 登录态 | `opus` / `sonnet` / `fable` |
+| DeepSeek | `https://api.deepseek.com/anthropic` | `deepseek-chat` |
+| Kimi(月之暗面) | `https://api.moonshot.cn/anthropic` | 以其控制台为准 |
+| 自定义 | 你自己的中转 / 公司网关 | 该网关支持的模型 |
+
+配完点「测试连通性」实测一次(发一句最短的话,不碰工具),通了会显示耗时与回复。
+
+两点提醒:
+
+- **各家兼容层成熟度不同**,可能出现工具调用行为差异 —— 这是模型能力问题,不是接口问题。重要产出建议切回官方跑。
+- **切到第三方后模型下拉会禁用**:`opus`/`sonnet` 这些是 Anthropic 的别名,在别家端点上无效,模型改由供应商配置里的模型名决定。
 
 ## 设计原则
 
@@ -99,7 +127,8 @@ python3 bin/extract.py  # 命令行批量提取知识库文档
 - 写操作限制在数据区,框架代码与顶层目录删不了;路径穿越被拒
 - 删除进回收站(`.trash/`),可恢复
 - **你的客户资料属于敏感信息**。`.gitignore` 已排除 `knowledge/my local knowledge/` 与凭证文件;若要对自己的数据做版本管理,请使用**私有**仓库
-- 邮件 SMTP 密码等凭证存在 `.workbench/`(已 gitignore),不随仓库走
+- 邮件 SMTP 密码、第三方模型 API key 等凭证存在 `.workbench/`(已 gitignore),不随仓库走。
+  key 写入 `.workbench/providers.json` 时文件权限设为 `600`,且**任何 API 响应里只回传脱敏值**(如 `sk-abc…1234`)
 
 ## 已知限制
 
@@ -111,8 +140,8 @@ python3 bin/extract.py  # 命令行批量提取知识库文档
 
 ## 路线图
 
+- [x] 支持 Anthropic 协议兼容的其他模型(DeepSeek / Kimi 等),让没有 Claude 订阅的人也能用
 - [ ] 跨平台:用纯 Python 库替换 `textutil`,通知改用跨平台方案
-- [ ] 支持 Anthropic 协议兼容的其他模型(DeepSeek / Kimi 等),让没有 Claude 订阅的人也能用
 - [ ] 抽象成「工作台构建器」,让其他岗位(法务、HR、咨询)快速搭出自己的专属工作台
 - [ ] 自动化测试与搜索索引
 

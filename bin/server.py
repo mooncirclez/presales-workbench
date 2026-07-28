@@ -1262,33 +1262,177 @@ def scan_scenarios():
 
 PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "plan"]
 
+DEFAULT_AI_COMMAND = ["claude", "-p", "{prompt}",
+                      "--permission-mode", "{permission_mode}"]
 
-def ai_command(c, prompt):
-    ai = c.get("ai", {})
-    tpl = ai.get("command") or \
-        ["claude", "-p", "{prompt}", "--permission-mode", "{permission_mode}"]
-    mode = ai.get("permission_mode") or "bypassPermissions"
-    if mode not in PERMISSION_MODES:
-        mode = "bypassPermissions"
+# 模型别名由 claude CLI 的 --model 消化(见 `claude --help`),留空 = 跟随 CLI 自身默认
+MODEL_PRESETS = [
+    {"id": "", "label": "跟随 CLI 默认", "note": "不加 --model,用你 claude 里设的模型"},
+    {"id": "opus", "label": "Opus 5", "note": "最强,长任务/复杂方案首选"},
+    {"id": "sonnet", "label": "Sonnet 5", "note": "均衡,日常产出够用"},
+    {"id": "fable", "label": "Fable 5", "note": "快,适合改写/短任务"},
+    {"id": "haiku", "label": "Haiku 4.5", "note": "最省,适合批量小活"},
+]
+
+# 供应商 = 一组注入给 claude CLI 的环境变量(Anthropic 兼容协议)。
+# base_url 走各家自己的 /anthropic 兼容端点;能力保留取决于该端点的成熟度。
+PROVIDER_PRESETS = [
+    {"id": "anthropic", "label": "Anthropic 官方", "base_url": "", "model": "",
+     "needs_key": False,
+     "note": "用本机 claude login 的登录态,不需要填 key。"},
+    {"id": "deepseek", "label": "DeepSeek", "needs_key": True,
+     "base_url": "https://api.deepseek.com/anthropic", "model": "deepseek-chat",
+     "note": "key 在 platform.deepseek.com 申请;推理型可填 deepseek-reasoner。"},
+    {"id": "kimi", "label": "Kimi(月之暗面)", "needs_key": True,
+     "base_url": "https://api.moonshot.cn/anthropic", "model": "kimi-k2-turbo-preview",
+     "note": "key 在 platform.moonshot.cn 申请;模型名以其控制台为准。"},
+    {"id": "custom", "label": "自定义(任意 Anthropic 兼容网关)", "needs_key": True,
+     "base_url": "", "model": "",
+     "note": "填你自己的 BASE_URL + key + 模型名,如自建中转或公司网关。"},
+]
+PROVIDERS_FILE = JOBS_DIR / "providers.json"
+# 切官方时必须清空的第三方变量,否则会串到官方端点上
+THIRD_PARTY_ENV = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL",
+                   "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                   "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL")
+
+
+def load_providers():
+    """凭证只落 .workbench/providers.json(已 gitignore),不进 workbench.json、不进分发包。"""
+    d = wb.load_json(PROVIDERS_FILE) or {}
+    if not isinstance(d, dict):
+        d = {}
+    d.setdefault("active", "anthropic")
+    d.setdefault("items", {})
+    return d
+
+
+def save_providers(d):
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    PROVIDERS_FILE.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n",
+                              encoding="utf-8")
+    try:
+        os.chmod(PROVIDERS_FILE, 0o600)   # 含 API key,只给自己读
+    except OSError:
+        pass
+
+
+def provider_by_id(pid, d=None):
+    """预设 + 用户覆盖 合并成一个完整供应商配置。
+    d 传入未落盘的配置时用它校验 —— 「填 key + 同时启用」是一次请求,
+    再去读磁盘会看不到刚填的 key。"""
+    base = next((dict(p) for p in PROVIDER_PRESETS if p["id"] == pid), None)
+    if base is None:
+        base = {"id": pid, "label": pid, "base_url": "", "model": "",
+                "needs_key": True, "note": ""}
+    saved = ((d or load_providers()).get("items") or {}).get(pid) or {}
+    for k in ("base_url", "model", "token", "small_model"):
+        if saved.get(k) is not None:
+            base[k] = saved[k]
+    return base
+
+
+def active_provider():
+    return provider_by_id(load_providers().get("active") or "anthropic")
+
+
+def is_third_party(p):
+    return bool(p.get("id") != "anthropic" and (p.get("base_url") or "").strip())
+
+
+def mask_token(t):
+    t = (t or "").strip()
+    if not t:
+        return ""
+    return (t[:6] + "…" + t[-4:]) if len(t) > 12 else "已配置"
+
+
+def providers_public():
+    """给前端的供应商视图:token 一律脱敏,绝不回传明文。"""
+    d = load_providers()
     out = []
-    for a in tpl:
-        if a == "{prompt}":
-            out.append(prompt)
-        elif a == "{permission_mode}":
-            out.append(mode)
-        else:
-            out.append(a)
-    return out
+    for p in PROVIDER_PRESETS:
+        m = provider_by_id(p["id"])
+        out.append({"id": m["id"], "label": m["label"], "note": m.get("note", ""),
+                    "base_url": m.get("base_url", ""), "model": m.get("model", ""),
+                    "needs_key": m.get("needs_key", True),
+                    "token_masked": mask_token(m.get("token")),
+                    "configured": bool(not m.get("needs_key") or m.get("token"))})
+    return {"active": d.get("active") or "anthropic", "items": out}
 
 
 def claude_available():
     return shutil.which("claude") is not None
 
 
-def run_job(job_id, cmd):
+def job_env(p=None):
+    """AI 子进程的环境:剥掉 Claude Code 自身的会话变量,再按供应商注入。"""
     env = dict(os.environ)
     for k in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"):
         env.pop(k, None)
+    for k in THIRD_PARTY_ENV:
+        env.pop(k, None)          # 先清干净,避免上一次切换的残留串味
+    p = active_provider() if p is None else p
+    if is_third_party(p):
+        env["ANTHROPIC_BASE_URL"] = p["base_url"].strip()
+        tok = (p.get("token") or "").strip()
+        if tok:
+            env["ANTHROPIC_AUTH_TOKEN"] = tok
+            env.pop("ANTHROPIC_API_KEY", None)   # 两者并存时行为不确定,只留一个
+        mdl = (p.get("model") or "").strip()
+        if mdl:
+            env["ANTHROPIC_MODEL"] = mdl
+            env["ANTHROPIC_SMALL_FAST_MODEL"] = (p.get("small_model") or mdl).strip()
+    return env
+
+
+def ai_command(c, prompt, p=None):
+    ai = c.get("ai", {})
+    tpl = ai.get("command") or DEFAULT_AI_COMMAND
+    mode = ai.get("permission_mode") or "bypassPermissions"
+    if mode not in PERMISSION_MODES:
+        mode = "bypassPermissions"
+    p = active_provider() if p is None else p
+    # 第三方端点没有 opus/sonnet 这些别名,模型改由 ANTHROPIC_MODEL 指定
+    model = "" if is_third_party(p) else (ai.get("model") or "").strip()
+    out = []
+    for a in tpl:
+        if a == "{prompt}":
+            out.append(prompt)
+        elif a == "{permission_mode}":
+            out.append(mode)
+        elif a == "{model}":
+            out.append(model)
+        else:
+            out.append(a)
+    # 模型留空时,连带丢掉模板里的 --model 开关,避免传一个空参数
+    cleaned, i = [], 0
+    while i < len(out):
+        if out[i] == "--model" and (i + 1 >= len(out) or not out[i + 1]):
+            i += 2
+            continue
+        cleaned.append(out[i])
+        i += 1
+    if model and "--model" not in cleaned:
+        cleaned += ["--model", model]
+    return cleaned
+
+
+def auth_hint(msg, env=None):
+    """失败信息里认证类错误的人话提示 —— 官方与第三方供应商的排查方向不同。"""
+    low = (msg or "").lower()
+    authy = ("oauth" in low or "authenticate" in low or "unauthorized" in low
+             or "401" in low or "invalid api key" in low or "api key" in low)
+    if not authy:
+        return ""
+    if env and env.get("ANTHROPIC_BASE_URL"):
+        return (f"第三方供应商({env['ANTHROPIC_BASE_URL']})认证失败:"
+                "请在「AI 任务 → 模型与供应商」检查 key 是否有效、模型名是否正确、账户是否有余额。")
+    return "本机 claude CLI 登录态失效:请在终端运行 `claude login` 重新登录后重试。"
+
+
+def run_job(job_id, cmd, env=None):
+    env = job_env() if env is None else env
     with JOBS_LOCK:
         JOBS[job_id]["status"] = "running"
         JOBS[job_id]["started"] = now_iso()
@@ -1301,9 +1445,8 @@ def run_job(job_id, cmd):
         err = strip_ansi((r.stderr or "")).strip()
         status = "done" if ok else "failed"
         hint = ""
-        if not ok and ("OAuth" in err or "authenticate" in err.lower() or
-                       "OAuth" in out or "authenticate" in out.lower()):
-            hint = "本机 claude CLI 登录态失效:请在终端运行 `claude login` 重新登录后重试。"
+        if not ok:
+            hint = auth_hint(err + "\n" + out, env)
         result = out if ok else (err or out or "无输出")
     except subprocess.TimeoutExpired:
         status, result, hint = "failed", "任务超时(30 分钟)", ""
@@ -1368,13 +1511,19 @@ def extract_artifacts(text, limit=12):
 
 def submit_job(c, title, prompt, category=None):
     job_id = uuid.uuid4().hex[:12]
+    # 供应商取一次快照:命令与环境必须来自同一份配置,否则中途切换会命令/key 错配
+    p = active_provider()
+    cmd, env = ai_command(c, prompt, p), job_env(p)
     job = {"id": job_id, "title": title[:120], "prompt": prompt[:4000],
            "category": category or guess_category(title),
            "status": "queued", "created": now_iso(), "output": "", "hint": "",
-           "artifacts": []}
+           "artifacts": [],
+           "model": (p.get("model") if is_third_party(p)
+                     else (c.get("ai", {}).get("model") or "")) or "默认",
+           "provider": p.get("label", "")}
     with JOBS_LOCK:
         JOBS[job_id] = job
-    t = threading.Thread(target=run_job, args=(job_id, ai_command(c, prompt)), daemon=True)
+    t = threading.Thread(target=run_job, args=(job_id, cmd, env), daemon=True)
     t.start()
     return job
 
@@ -2108,6 +2257,73 @@ class Handler(BaseHTTPRequestHandler):
                 cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
                                  encoding="utf-8")
                 self._send(200, {"ok": True, "mode": mode})
+            elif u.path == "/api/ai-model":
+                model = (body.get("model") or "").strip()
+                if model and not re.fullmatch(r"[A-Za-z0-9._\-]{1,64}", model):
+                    raise ValueError("模型名只允许字母数字与 . _ -")
+                cpath = ROOT / "workbench.json"
+                conf = wb.load_json(cpath) or {}
+                conf.setdefault("ai", {})["model"] = model
+                cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
+                                 encoding="utf-8")
+                self._send(200, {"ok": True, "model": model})
+            elif u.path == "/api/provider":
+                # 保存/切换供应商。token 为空字符串=不改动(前端只拿得到脱敏值),
+                # 传 "__clear__" 才是真的清空。
+                d = load_providers()
+                pid = (body.get("id") or "").strip()
+                known = {p["id"] for p in PROVIDER_PRESETS}
+                if pid:
+                    if pid not in known:
+                        raise ValueError(f"未知供应商:{pid}")
+                    it = dict((d.get("items") or {}).get(pid) or {})
+                    for k in ("base_url", "model", "small_model"):
+                        if k in body:
+                            it[k] = (body.get(k) or "").strip()
+                    if it.get("base_url") and not it["base_url"].startswith(("http://", "https://")):
+                        raise ValueError("BASE_URL 需以 http:// 或 https:// 开头")
+                    tok = body.get("token")
+                    if tok == "__clear__":
+                        it.pop("token", None)
+                    elif tok:
+                        it["token"] = tok.strip()
+                    d.setdefault("items", {})[pid] = it
+                act = (body.get("active") or "").strip()
+                if act:
+                    if act not in known:
+                        raise ValueError(f"未知供应商:{act}")
+                    chk = provider_by_id(act, d)
+                    if act != "anthropic" and not (chk.get("base_url") or "").strip():
+                        raise ValueError("该供应商还没配 BASE_URL,先填好再切换")
+                    if chk.get("needs_key") and not (chk.get("token") or "").strip():
+                        raise ValueError("该供应商还没填 API key,先填好再切换")
+                    d["active"] = act
+                save_providers(d)
+                self._send(200, {"ok": True, "providers": providers_public()})
+            elif u.path == "/api/provider-test":
+                # 连通性实测:发一句最短的话,不碰工具,只验端点+key+模型名
+                if not claude_available():
+                    raise FileNotFoundError("本机未找到 claude CLI")
+                pid = (body.get("id") or "").strip()
+                p = provider_by_id(pid) if pid else active_provider()
+                env, t0 = job_env(p), time.time()
+                cmd = ["claude", "-p", "回复两个字符:OK"]
+                mdl = "" if is_third_party(p) else (c.get("ai", {}).get("model") or "").strip()
+                if mdl:
+                    cmd += ["--model", mdl]
+                try:
+                    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT),
+                                       env=env, timeout=120, stdin=subprocess.DEVNULL)
+                except subprocess.TimeoutExpired:
+                    raise RuntimeError("测试超时(120 秒):端点不通或响应过慢") from None
+                strip = lambda s: re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", s or "").strip()  # noqa: E731
+                ms = int((time.time() - t0) * 1000)
+                if r.returncode != 0:
+                    msg = strip(r.stderr) or strip(r.stdout) or "无输出"
+                    raise RuntimeError((auth_hint(msg, env) or msg)[:300])
+                self._send(200, {"ok": True, "ms": ms, "reply": strip(r.stdout)[:200],
+                                 "label": p.get("label", ""),
+                                 "model": (p.get("model") if is_third_party(p) else mdl) or "CLI 默认"})
             elif u.path == "/api/open-claude":
                 r = subprocess.run(["open", "-a", "Claude"], capture_output=True, text=True)
                 if r.returncode != 0:
@@ -2188,17 +2404,15 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("prompt 不能为空")
                 if not claude_available():
                     raise FileNotFoundError("本机未找到 claude CLI")
-                env = dict(os.environ)
-                for k in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT"):
-                    env.pop(k, None)
-                r = subprocess.run(ai_command(c, prompt), capture_output=True, text=True,
-                                   cwd=str(ROOT), env=env, timeout=180,
+                p = active_provider()
+                env = job_env(p)
+                r = subprocess.run(ai_command(c, prompt, p), capture_output=True,
+                                   text=True, cwd=str(ROOT), env=env, timeout=180,
                                    stdin=subprocess.DEVNULL)
                 strip = lambda s: re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", s or "").strip()  # noqa: E731
                 if r.returncode != 0:
                     msg = strip(r.stderr) or strip(r.stdout) or "生成失败"
-                    if "OAuth" in msg or "authenticate" in msg.lower():
-                        msg = "claude 登录态失效:请运行 claude login 后重试"
+                    msg = (auth_hint(msg, env) or msg)
                     raise RuntimeError(msg[:300])
                 self._send(200, {"ok": True, "text": strip(r.stdout)[:8000]})
             elif u.path == "/api/open":
@@ -2319,7 +2533,10 @@ class Handler(BaseHTTPRequestHandler):
             "claude": {"available": claude_available(), "running_jobs": running,
                        "permission_mode": (c.get("ai", {}).get("permission_mode")
                                            or "bypassPermissions"),
-                       "permission_modes": PERMISSION_MODES},
+                       "permission_modes": PERMISSION_MODES,
+                       "model": (c.get("ai", {}).get("model") or ""),
+                       "models": MODEL_PRESETS,
+                       "providers": providers_public()},
             "skills": {"session": c.get("skills", []), "plugged": scan_skills()},
             "roles": load_roles(),
             "events": load_events(),

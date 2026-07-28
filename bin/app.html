@@ -2200,6 +2200,7 @@ function vAI(){
     ${S.claude.permission_mode==="acceptEdits"?`<p class="small" style="color:var(--warn);margin-top:8px">
       当前「仅文件编辑」:AI 执行命令(如生成 xlsx/pptx、跑脚本)会被拒绝且不会提示你批准 —— 后台任务无法中途弹窗。
       需要它完整干活请切到「全部放行」。</p>`:""}</div>
+  ${vModelBar()}
   <div class="sec">定时任务</div>
   <div class="bar"><button onclick="mSched(-1)">新建定时任务</button>
     <span class="small muted">到点由工作台服务自动提交(服务需在运行);适合每日晨报、每周周报等</span></div>
@@ -2303,6 +2304,94 @@ async function toggleSched(idx){const s=S.schedules[idx];
   await refresh();route();}
 async function delSched(id){try{await api("/api/schedule",{op:"delete",schedule:{id:id}});
   closeModal();await refresh();route();toast("已删除");}catch(e){toast(e.message);}}
+/* ---------- 模型与供应商 ---------- */
+function vModelBar(){
+  const pv=(S.claude.providers)||{active:"anthropic",items:[]};
+  const act=(pv.items||[]).find(x=>x.id===pv.active)||{id:"anthropic",label:"Anthropic 官方"};
+  const third=act.id!=="anthropic";
+  const models=S.claude.models||[];
+  const cur=models.find(m=>m.id===(S.claude.model||""))||{label:S.claude.model||"跟随 CLI 默认"};
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="bar" style="margin-bottom:10px">
+      <b class="small">模型与供应商</b>
+      <span class="tag ${third?"o":"g"}">${esc(act.label)}</span>
+      <span class="tag">${esc(third?(act.model||"端点默认"):cur.label)}</span>
+      <span class="sp"></span>
+      <button class="sm" onclick="testProvider()">测试连通性</button></div>
+    <div class="bar">
+      <label class="small muted">供应商&nbsp;</label>
+      <select onchange="switchProvider(this.value)">
+        ${(pv.items||[]).map(p=>`<option value="${attr(p.id)}" ${p.id===pv.active?"selected":""}
+          >${esc(p.label)}${p.configured||p.id==="anthropic"?"":" (未配置)"}</option>`).join("")}
+      </select>
+      <button class="sm" onclick="mProvider('${attr(act.id)}')">配置当前供应商…</button>
+      <span class="sp"></span>
+      <label class="small muted">模型&nbsp;</label>
+      <select onchange="setAiModel(this.value)" ${third?"disabled":""}
+        title="${third?"第三方供应商的模型在供应商配置里填":"claude CLI 的 --model"}">
+        ${models.map(m=>`<option value="${attr(m.id)}" ${m.id===(S.claude.model||"")?"selected":""}
+          >${esc(m.label)}</option>`).join("")}
+      </select></div>
+    <p class="small muted" style="margin:8px 0 0">${third?
+      `当前走第三方端点 <span class="mono">${esc(act.base_url||"")}</span>,模型由供应商配置里的模型名决定 ——
+       claude 的 opus/sonnet 别名在这里无效,所以模型下拉已禁用。切回官方即可恢复。`:
+      esc((models.find(m=>m.id===(S.claude.model||""))||{}).note||"")}</p>
+    ${third?`<p class="small" style="color:var(--warn);margin:6px 0 0">
+      第三方兼容层的成熟度各家不同,可能出现工具调用行为差异(模型能力问题,不是接口问题)。
+      重要产出建议切回官方跑。</p>`:""}</div>`;}
+
+async function setAiModel(model){try{
+  await api("/api/ai-model",{model:model});
+  await refresh();route();
+  toast(model?`已切到 ${model}`:"已改为跟随 CLI 默认模型");}catch(e){toast(e.message,5000);}}
+
+async function switchProvider(id){
+  const pv=(S.claude.providers)||{items:[]};
+  const p=(pv.items||[]).find(x=>x.id===id);
+  if(p&&!p.configured){mProvider(id);return;}          // 没配好先去配,别让切换直接报错
+  try{await api("/api/provider",{active:id});await refresh();route();
+    toast(`已切到 ${p?p.label:id}`);}catch(e){toast(e.message,5000);route();}}
+
+function mProvider(id){
+  const pv=(S.claude.providers)||{items:[]};
+  const p=(pv.items||[]).find(x=>x.id===id)||{id:id,label:id};
+  const official=p.id==="anthropic";
+  modal(`<h3>配置供应商 · ${esc(p.label)}</h3>
+  ${official?`<p class="small muted">官方走本机 <code>claude login</code> 的登录态,不需要在这里填任何东西。
+    切到官方后,工作台会清掉所有第三方环境变量。</p>`:`
+  <div class="row"><label>BASE_URL(Anthropic 兼容端点)</label>
+    <input id="pv_url" value="${attr(p.base_url||"")}" placeholder="https://api.example.com/anthropic"></div>
+  <div class="row"><label>API Key${p.token_masked?` <span class="small muted">当前:${esc(p.token_masked)}</span>`:""}</label>
+    <input id="pv_tok" type="password" autocomplete="off"
+      placeholder="${p.token_masked?"留空 = 不改动现有 key":"粘贴你的 key"}"></div>
+  <div class="row"><label>模型名(该供应商自己的模型 ID)</label>
+    <input id="pv_mdl" value="${attr(p.model||"")}" placeholder="如 deepseek-chat"></div>
+  <p class="small muted">${esc(p.note||"")}</p>
+  <p class="small muted">key 只写进本机 <span class="mono">.workbench/providers.json</span>(权限 600、已 gitignore),
+    不进 workbench.json、不进 git、分享工作台时不会带走。</p>`}
+  <div class="btns">
+    ${official||!p.token_masked?"":`<button onclick="clearProviderKey('${attr(p.id)}')">清空 key</button>`}
+    <button onclick="closeModal()">取消</button>
+    ${official?`<button class="pri" onclick="switchProvider('anthropic');closeModal()">切到官方</button>`:
+      `<button class="pri" onclick="saveProvider('${attr(p.id)}')">保存并启用</button>`}</div>`);
+  if(!official)setTimeout(()=>{const el=$("#pv_url");if(el)el.focus();},30);}
+
+async function saveProvider(id){try{
+  await api("/api/provider",{id:id,base_url:$("#pv_url").value,
+    token:$("#pv_tok").value,model:$("#pv_mdl").value,active:id});
+  closeModal();await refresh();route();
+  toast("已保存并启用,建议点「测试连通性」验一下",4500);}catch(e){toast(e.message,5000);}}
+
+async function clearProviderKey(id){try{
+  await api("/api/provider",{id:id,token:"__clear__"});
+  closeModal();await refresh();route();toast("已清空该供应商的 key");}catch(e){toast(e.message,5000);}}
+
+async function testProvider(){
+  toast("正在测试…最长等 120 秒",3000);
+  try{const r=await api("/api/provider-test",{});
+    toast(`✓ ${r.label} 通了 · 模型 ${r.model} · ${r.ms}ms · 回复「${r.reply||""}」`,7000);
+  }catch(e){toast("✗ "+e.message,9000);}}
+
 async function setAiPerm(mode){try{
   await api("/api/ai-permission",{mode:mode});
   await refresh();route();
