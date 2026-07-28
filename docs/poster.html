@@ -12,47 +12,40 @@ body{width:1080px;height:1440px;background:#f3f4f7;font-family:var(--sans);
   color:var(--ink);-webkit-font-smoothing:antialiased;overflow:hidden;position:relative}
 /* 顶部深色区:标题 */
 .top{background:linear-gradient(158deg,#141a2e 0%,#1f3d99 105%);color:#fff;
-  padding:64px 72px 58px;position:relative;overflow:hidden}
+  padding:80px 72px 72px;position:relative;overflow:hidden}
 .top::after{content:"";position:absolute;right:-140px;top:-160px;width:520px;height:520px;
   border-radius:50%;background:rgba(255,255,255,.05)}
-.brand{display:flex;align-items:center;gap:13px;margin-bottom:40px}
+.brand{display:flex;align-items:center;gap:13px;margin-bottom:48px}
 .logo{width:40px;height:40px;border-radius:10px;background:#fff;color:#1f3d99;
   font:800 21px/40px var(--sans);text-align:center;flex:none}
 .brand b{font-size:20px;letter-spacing:.5px;display:block;line-height:1.25}
 .brand span{font-size:10.5px;letter-spacing:3.4px;opacity:.62;text-transform:uppercase}
-h1{font-size:66px;line-height:1.2;letter-spacing:-2.4px;font-weight:800;position:relative}
+h1{font-size:60px;line-height:1.32;letter-spacing:-1.8px;font-weight:800;position:relative}
 h1 em{font-style:normal;color:#9db6ff}
-.sub{margin-top:24px;font-size:21px;line-height:1.7;opacity:.9;max-width:34ch;position:relative}
+.sub{margin-top:30px;font-size:22px;line-height:1.7;opacity:.9;max-width:44ch;position:relative}
 .sub b{color:#fff;font-weight:700}
 
 /* 中部:四层 */
-.mid{padding:54px 72px 0}
+.mid{padding:76px 72px 0}
 .eyebrow{font-size:12px;letter-spacing:3px;color:var(--muted);font-weight:700;
-  text-transform:uppercase;margin-bottom:20px}
-.layers{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  text-transform:uppercase;margin-bottom:28px}
+.layers{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .ly{background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:26px 28px;position:relative}
+  padding:32px 32px;position:relative}
 .ly .n{font:700 11px var(--mono);color:var(--accent);letter-spacing:1px;
   padding-left:9px;border-left:2px solid var(--accent);margin-bottom:10px;display:block}
-.ly>b{display:block;font-size:19px;letter-spacing:-.3px;margin-bottom:7px}
+.ly>b{display:block;font-size:22px;letter-spacing:-.3px;margin-bottom:9px}
 .ly span b{color:var(--ink);font-weight:700}
-.ly span{font-size:14.5px;line-height:1.62;color:var(--muted);display:block}
+.ly span{font-size:16px;line-height:1.72;color:var(--muted);display:block}
 .ly code{font-family:var(--mono);font-size:13px;background:var(--soft);
   color:var(--accent);padding:1px 6px;border-radius:5px}
 
-/* 老实话 */
-.honest{margin-top:24px;background:var(--warnbg);border:1px solid #f0e2c0;
-  border-left:3px solid var(--warn);border-radius:12px;padding:22px 26px}
-.honest>b{font-size:15px;color:var(--warn);display:block;margin-bottom:5px}
-.honest span b{color:#6b5310;font-weight:700}
-.honest span{font-size:14px;line-height:1.65;color:#7c6318;display:block}
-
 /* 能力带 */
-.band{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:24px;
+.band{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:34px;
   background:var(--line);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-.bi{background:var(--card);padding:20px 22px}
-.bi b{display:block;font-size:16px;margin-bottom:4px}
-.bi span{display:block;font-size:13px;color:var(--muted);line-height:1.55}
+.bi{background:var(--card);padding:34px 26px}
+.bi b{display:block;font-size:18px;margin-bottom:6px}
+.bi span{display:block;font-size:14px;color:var(--muted);line-height:1.6}
 
 /* 底部 */
 .foot{position:absolute;left:0;right:0;bottom:0;padding:20px 72px 32px;
@@ -75,8 +68,8 @@ h1 em{font-style:normal;color:#9db6ff}
     <div class="logo">W</div>
     <div><b>售前工作台</b><span>Presales Workbench</span></div>
   </div>
-  <h1>用得起公网大模型,<br><em>又不把客户名字交出去</em></h1>
-  <p class="sub">给售前工程师的本地 AI 工作台。<br>AI 替你写方案、盯项目 —— <b>但客户是谁,它从头到尾不知道。</b></p>
+  <h1>售前工程师如何安全、体系化地<br>使用公网大模型,<em>保障客户信息安全</em></h1>
+  <p class="sub">给售前工程师的本地 AI 工作台。AI 替你写方案、盯项目 ——<br><b>但客户是谁,它从头到尾不知道。</b></p>
 </div>
 
 <div class="mid">
@@ -91,13 +84,6 @@ h1 em{font-style:normal;color:#9db6ff}
     <div class="ly"><span class="n">04</span><b>档案不出你电脑</b>
       <span>工作台在本机运行,不上传云端。档案就是磁盘上的文件,不用了资产还在。</span></div>
   </div>
-
-  <div class="honest">
-    <b>把话说清楚:它保护到什么程度</b>
-    <span>化名可读、保留行业类别,你自己好认 —— 代价是<b>同行可能猜出个大概</b>。
-      谈的金额和方案内容<b>仍要发给模型</b>,AI 才干得了活。公司要求全程不出网?可改接内网模型。</span>
-  </div>
-
   <div class="band">
     <div class="bi"><b>客户</b><span>组织架构 · 决策链 · KPI</span></div>
     <div class="bi"><b>项目</b><span>01–07 交付物流水线</span></div>
