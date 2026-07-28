@@ -1,4 +1,5 @@
 # === 你的真实资料:绝不入库 ===
+.mask/
 knowledge/my local knowledge/*
 !knowledge/my local knowledge/放这里.md
 knowledge/.extracted/

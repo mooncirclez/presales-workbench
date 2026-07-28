@@ -1,0 +1,49 @@
+name: 发布 Release
+
+# 推送 v 开头的标签时自动建 Release,发布说明取自 CHANGELOG.md 对应段落。
+# 用 runner 自带的 gh + 内置 GITHUB_TOKEN,不引第三方 action、不需要配任何密钥。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write        # 建 Release 需要写权限,其余一律不给
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 从 CHANGELOG 取出该版本的说明
+        id: notes
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          echo "版本:$VER"
+          # 日志里没写这一版就直接失败 —— 宁可不发,也不要发一个空说明的 Release
+          python3 bin/changelog.py --check "$VER"
+          python3 bin/changelog.py "$VER" > /tmp/notes.md
+          python3 bin/changelog.py "$VER" --title > /tmp/title.txt
+          echo "title=$(cat /tmp/title.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: 校验 workbench.json 的版本号与标签一致
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          CFG=$(python3 -c "import json;print(json.load(open('workbench.json')).get('version',''))")
+          if [ "$CFG" != "$VER" ]; then
+            echo "::error::标签是 $VER,但 workbench.json 里写的是 '$CFG' —— 界面会显示错的版本号"
+            exit 1
+          fi
+          echo "一致:$CFG"
+
+      - name: 建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "${{ steps.notes.outputs.title }}" \
+            --notes-file /tmp/notes.md \
+            --verify-tag
