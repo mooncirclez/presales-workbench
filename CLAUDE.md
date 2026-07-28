@@ -57,6 +57,12 @@ python3 bin/workbench.py status  # 打印当前插槽状态(JSON)
 ```
 工作台界面(bin/server.py + bin/app.html)提供:客户/项目/纪要管理、槽位实例化、全文搜索、AI 任务(后台调用本机 `claude -p`,命令模板在 workbench.json 的 `ai.command`,可插拔)。界面里的 AI 任务与你在 Claude Code 里直接对话是同一套规范——都以本文件为准。
 
+**模型与供应商插槽**(界面「AI 任务 → 模型与供应商」):
+- 模型 = `ai.model`(留空跟随 CLI 默认,可填 opus/sonnet/fable/haiku),经命令模板的 `{model}` 下发为 `--model`。
+- 供应商 = 给 CLI 注入 Anthropic 兼容协议的环境变量(`ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_MODEL`),**不自研 API 适配器**,以保住读写文件/Skills/多轮等全部 agent 能力。走第三方时 opus 这类别名无效,`ai.model` 被忽略,模型由供应商配置的模型名决定。
+- **凭证只落 `.workbench/providers.json`(权限 600、已 gitignore)**:不许写进 workbench.json、不许写进任何可分发文件、不许回传明文给前端(只回脱敏值)。用户让你"帮忙填 key"时,让他自己在界面里填。
+
+
 ## 四、目录与命名(数据区)
 - 一客户一档:`customers/<客户简称>/`(结构化档案 `customer.json` + 叙事档案 profile.md)。
 - 一商机一档:`projects/<客户简称>-<项目名>/`(元数据 `project.json`),交付物按槽位名前缀(01~07)落盘,版本 `_v1/_v2/_终稿`。
