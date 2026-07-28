@@ -273,6 +273,28 @@ padding:24px;width:min(520px,92vw);max-height:88vh;overflow-y:auto}
 background:var(--ink);color:var(--bg);border-radius:8px;padding:9px 18px;font-size:13px;
 opacity:0;transition:opacity .25s;z-index:60;max-width:80vw;pointer-events:none}
 #toast.show{opacity:.95}
+/* ---- 对话式 AI ---- */
+.thread{min-height:130px;max-height:min(52vh,520px);overflow-y:auto;padding:4px 2px 2px;
+display:flex;flex-direction:column;gap:14px}
+.msg{display:flex;flex-direction:column;max-width:86%}
+.msg.me{align-self:flex-end;align-items:flex-end}
+.msg.ai{align-self:flex-start;align-items:flex-start}
+.bub{border-radius:12px;padding:9px 13px;font-size:13px;line-height:1.65;
+word-break:break-word;overflow-wrap:anywhere}
+.msg.me .bub{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+.msg.ai .bub{background:var(--chip);border:1px solid var(--line);border-bottom-left-radius:3px}
+.msg.ai .bub.bad{border-color:var(--bad);background:var(--bad-bg,transparent)}
+.bub>*:first-child{margin-top:0}.bub>*:last-child{margin-bottom:0}
+.bub h1,.bub h2,.bub h3{font-size:14px;margin:10px 0 6px}
+.bub pre{background:rgba(127,127,127,.12);border-radius:7px;padding:9px;
+font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-x:auto}
+.bub table{border-collapse:collapse;font-size:12px;margin:6px 0;display:block;overflow-x:auto}
+.bub td,.bub th{border:1px solid var(--line);padding:4px 8px}
+.mmeta{font-size:11px;color:var(--muted);margin-top:4px;display:flex;gap:8px;
+align-items:center;flex-wrap:wrap}
+.chatin{display:flex;gap:8px;align-items:flex-end;margin-top:12px;
+border-top:1px solid var(--line);padding-top:12px}
+.chatin textarea{flex:1;resize:none;min-height:46px;max-height:180px;line-height:1.6}
 .job{border-top:1px solid var(--line);padding:11px 2px}
 .job:first-child{border-top:none}
 .job pre{font-family:var(--mono);font-size:12px;background:var(--chip);border-radius:8px;
@@ -498,7 +520,11 @@ async function pollJobs(){try{
     const j=await api(jobQuery());S._jobs=j.jobs;S._jobmeta=j;
     const running=j.jobs.filter(x=>x.status==="running"||x.status==="queued").length;
     $("#jbadge").innerHTML=running?`<span class="tag y">${running}</span>`:"";
-    if(location.hash==="#/ai"){paintJobFilter();paintJobs();}
+    if(location.hash==="#/ai"){paintJobFilter();paintJobs();
+      const r=await api("/api/chat?id="+encodeURIComponent(CHAT.id||""));
+      CHAT.turns=r.turns||[];CHAT.chats=r.chats||[];
+      if(CHAT.pending&&CHAT.turns.some(t=>t.prompt===CHAT.pending.prompt))CHAT.pending=null;
+      paintChat();}
     if(!running){clearInterval(pollTimer);pollTimer=null;}
   }catch(e){}}
 function jfSet(k,v){JF[k]=v;pollJobs();}
@@ -2181,13 +2207,10 @@ function vAI(){
     <code>claude login</code> 后刷新本页。</div></div>`}
   <div class="card" style="margin-bottom:14px">
     <div class="bar" style="margin-bottom:10px">
+      <button class="sm" onclick="newChat()">＋ 新对话</button>
+      <span id="chatsel"></span>${/* 对话列表异步到达,由 paintChat 填,避免首屏空白 */""}
       <label class="small muted">专家角色&nbsp;</label>
       <select id="aiRole" onchange="AIROLE=this.value">${opts}</select>
-      <span class="small muted">${roles.length?"选择后指令自动携带角色设定与技能上下文":"可在「技能」页创建角色"}</span></div>
-    <textarea id="aiP" rows="4" style="width:100%" placeholder="例:把示例银行最近两次会议纪要里的行动项汇总成清单,存到该客户目录下 todo.md"></textarea>
-    <div class="bar" style="margin:10px 0 0">
-      <button class="pri" onclick="runAI()" ${S.claude.available?"":"disabled"}>运行</button>
-      <span class="small muted">每次运行 = 一次真实 Claude 会话(你的额度)</span>
       <span class="sp"></span>
       <label class="small muted">AI 权限&nbsp;</label>
       <select onchange="setAiPerm(this.value)" title="后台任务无法中途弹窗批准,只能提前给权限">
@@ -2197,9 +2220,18 @@ function vAI(){
       </select>
       <button class="sm" onclick="api('/api/open-claude',{}).then(()=>toast('已打开 Claude App'))
         .catch(e=>toast(e.message,4000))">打开 Claude App</button></div>
-    ${S.claude.permission_mode==="acceptEdits"?`<p class="small" style="color:var(--warn);margin-top:8px">
+    ${S.claude.permission_mode==="acceptEdits"?`<p class="small" style="color:var(--warn);margin:0 0 8px">
       当前「仅文件编辑」:AI 执行命令(如生成 xlsx/pptx、跑脚本)会被拒绝且不会提示你批准 —— 后台任务无法中途弹窗。
-      需要它完整干活请切到「全部放行」。</p>`:""}</div>
+      需要它完整干活请切到「全部放行」。</p>`:""}
+    <div class="thread" id="thread"></div>
+    <div class="chatin">
+      <textarea id="aiP" rows="2" placeholder="说人话就行,回车发送、Shift+回车换行。例:把示例银行最近两次纪要里的行动项汇总成清单,存到该客户目录下 todo.md"
+        oninput="chatGrow(this)" onkeydown="chatKey(event)"></textarea>
+      <button class="pri" id="chatSend" onclick="sendChat()" ${S.claude.available?"":"disabled"}>发送</button>
+    </div>
+    <div class="small muted" style="margin-top:7px">${
+      CHAT.turns.length?`本轮会带上前 ${CHAT.turns.filter(t=>t.status==="done").length} 轮的上下文继续`
+        :"每次发送 = 一次真实 AI 会话(你的额度);产出直接写入工作台文件"}</div></div>
   ${vModelBar()}
   <div class="sec">定时任务</div>
   <div class="bar"><button onclick="mSched(-1)">新建定时任务</button>
@@ -2398,10 +2430,93 @@ async function setAiPerm(mode){try{
   toast(mode==="bypassPermissions"?"已设为全部放行:AI 任务可自主完成文件与命令操作":
     mode==="plan"?"已设为只规划不动手":"已设为仅文件编辑(执行命令会被拒)",4000);
 }catch(e){toast(e.message);}}
-function runAI(){
+function runAI(){   // 保留:侧栏/快捷键仍可走确认弹窗的一次性任务
   const base=$("#aiP").value.trim();if(!base)return toast("先写点指令");
   const r=(S.roles||[]).find(x=>x.id===AIROLE);
   mAI(r?`${r.name} · 任务`:"自由指令",rolePrefix(r)+base);}
+
+/* ---------- 对话式 AI ----------
+   一条对话 = 共享 chat_id 的一串任务;后端用上一轮的 session_id 做 --resume,
+   所以追问是真的带上下文,不是把气泡摞在一起。 */
+let CHAT={id:localStorage.getItem("wb_chat")||"",turns:[],chats:[],pending:null};
+
+async function loadChat(id){
+  if(id!==undefined&&id!==null&&id!==CHAT.id){CHAT.id=id;CHAT.pending=null;
+    localStorage.setItem("wb_chat",id);}
+  try{const r=await api("/api/chat?id="+encodeURIComponent(CHAT.id||""));
+    CHAT.turns=r.turns||[];CHAT.chats=r.chats||[];
+    if(CHAT.pending&&CHAT.turns.some(t=>t.prompt===CHAT.pending.prompt))CHAT.pending=null;
+  }catch(e){}
+  if(location.hash==="#/ai"){route();paintChat();}}
+
+async function newChat(){
+  try{const r=await api("/api/chat-new",{});
+    CHAT.id=r.chat_id;CHAT.turns=[];CHAT.pending=null;
+    localStorage.setItem("wb_chat",CHAT.id);route();paintChat();
+    const t=$("#aiP");if(t)t.focus();
+  }catch(e){toast(e.message);}}
+
+function chatGrow(el){       // 空内容显式回到一行半,不靠 scrollHeight(布局未稳时会读到整块高度)
+  if(!el)return;
+  el.style.height="auto";
+  el.style.height=(el.value?Math.min(Math.max(el.scrollHeight,46),180):46)+"px";}
+function chatKey(e){
+  if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendChat();}}
+
+async function sendChat(){
+  const ta=$("#aiP");if(!ta)return;
+  const base=ta.value.trim();if(!base)return toast("先说点什么");
+  if(!S.claude.available)return toast("claude CLI 不可用",4000);
+  const r=(S.roles||[]).find(x=>x.id===AIROLE);
+  const prompt=rolePrefix(r)+base;
+  if(!CHAT.id){try{CHAT.id=(await api("/api/chat-new",{})).chat_id;
+    localStorage.setItem("wb_chat",CHAT.id);}catch(e){return toast(e.message);}}
+  // 乐观上屏:消息立刻变成气泡,输入框才清空 —— 内容不会凭空消失
+  CHAT.pending={prompt:prompt,shown:base,at:new Date().toTimeString().slice(0,5)};
+  ta.value="";chatGrow(ta);paintChat();
+  try{
+    await api("/api/ai",{chat_id:CHAT.id,prompt:prompt,
+      title:(r?r.name+" · ":"")+base.slice(0,40)});
+    startPoll();loadChat();
+  }catch(e){
+    CHAT.pending=null;ta.value=base;chatGrow(ta);paintChat();  // 失败把话还给你
+    toast(e.message,5000);}}
+
+function paintChat(){
+  const sel=$("#chatsel");
+  if(sel)sel.innerHTML=(CHAT.chats||[]).length?
+    `<select onchange="loadChat(this.value)" style="max-width:190px" title="切换历史对话">${
+      CHAT.chats.map(ch=>{const t=(ch.title||"新对话").replace(/\s+/g," ").trim();
+      return `<option value="${attr(ch.id)}" ${ch.id===CHAT.id?"selected":""}
+        >${esc(t.length>14?t.slice(0,14)+"…":t)}${ch.turns>1?` · ${ch.turns}轮`:""}</option>`;}
+      ).join("")}</select>`:"";
+  const el=$("#thread");if(!el)return;
+  const rows=[];
+  for(const t of CHAT.turns){
+    rows.push(`<div class="msg me"><div class="bub">${esc(t.prompt||"")}</div>
+      <div class="mmeta">${esc((t.created||"").slice(11,16))}</div></div>`);
+    const run=t.status==="queued"||t.status==="running";
+    const bad=t.status==="failed";
+    const body=run?`<span class="spin"></span>${t.status==="queued"?"排队中…":"正在干活…"}`
+      :bad?esc(t.output||"失败"):md(t.output||"(无输出)");
+    const arts=(t.artifacts||[]).map(a=>{
+      const n=a.split("/").pop(),ed=/\.(md|txt|json|csv)$/i.test(n);
+      return `<a class="f small" ${ed?`href="${edLink(a)}"`:`onclick="openLocal('${attr(a)}')"`}
+        title="${attr(a)}">${extChip(n)} ${esc(n)}</a>`;}).join("");
+    rows.push(`<div class="msg ai"><div class="bub ${bad?"bad":""}">${body}</div>
+      ${arts?`<div class="arts">📎 产出:${arts}</div>`:""}
+      ${t.hint?`<div class="small" style="color:var(--bad);margin-top:5px">${esc(t.hint)}</div>`:""}
+      ${t.note?`<div class="small" style="color:var(--warn);margin-top:5px">${esc(t.note)}</div>`:""}
+      <div class="mmeta">${t.resumed?"↩ 续上文 · ":""}${esc(t.provider||"")}
+        ${t.model&&t.model!=="默认"?"· "+esc(t.model):""}
+        ${t.cost_usd?"· $"+Number(t.cost_usd).toFixed(4):""}</div></div>`);}
+  if(CHAT.pending)
+    rows.push(`<div class="msg me"><div class="bub">${esc(CHAT.pending.shown)}</div>
+      <div class="mmeta">${esc(CHAT.pending.at)}</div></div>
+      <div class="msg ai"><div class="bub"><span class="spin"></span>提交中…</div></div>`);
+  el.innerHTML=rows.length?rows.join("")
+    :`<div class="empty small">还没有对话 —— 下面说一句话就行。产出会直接写进工作台文件。</div>`;
+  el.scrollTop=el.scrollHeight;}
 function paintJobs(){
   const el=$("#jobs");if(!el)return;
   const jobs=S._jobs||[];
@@ -2706,7 +2821,8 @@ async function route(){
   $("#view").innerHTML=html;
   paintSide();
   if(edPath)loadEd();
-  if(h==="#/ai")startPoll();}
+  if(h==="#/ai"){paintChat();startPoll();
+    const ta=$("#aiP");if(ta)chatGrow(ta);}}
 window.addEventListener("hashchange",route);
 (async()=>{try{await refresh();}catch(e){}
   route();startPoll();})();

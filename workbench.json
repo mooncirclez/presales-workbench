@@ -62,13 +62,15 @@
     }
   ],
   "ai": {
-    "note": "工作台 AI 按钮调用的命令;{prompt} / {permission_mode} / {model} 会被替换。换成任何 CLI 都行。",
+    "note": "工作台 AI 按钮调用的命令;{prompt} / {permission_mode} / {model} 会被替换。--output-format json 用于拿 session_id(多轮续话)与成本;换成不支持该参数的 CLI 时去掉即可,工作台会自动退回纯文本模式。",
     "command": [
       "claude",
       "-p",
       "{prompt}",
       "--permission-mode",
-      "{permission_mode}"
+      "{permission_mode}",
+      "--output-format",
+      "json"
     ],
     "permission_mode": "bypassPermissions",
     "permission_note": "bypassPermissions=全部放行(后台任务不会中途卡住,推荐);acceptEdits=只放行文件编辑,执行命令会被拒;plan=只规划不动手",

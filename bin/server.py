@@ -1263,7 +1263,8 @@ def scan_scenarios():
 PERMISSION_MODES = ["bypassPermissions", "acceptEdits", "plan"]
 
 DEFAULT_AI_COMMAND = ["claude", "-p", "{prompt}",
-                      "--permission-mode", "{permission_mode}"]
+                      "--permission-mode", "{permission_mode}",
+                      "--output-format", "json"]
 
 # 模型别名由 claude CLI 的 --model 消化(见 `claude --help`),留空 = 跟随 CLI 自身默认
 MODEL_PRESETS = [
@@ -1386,7 +1387,7 @@ def job_env(p=None):
     return env
 
 
-def ai_command(c, prompt, p=None):
+def ai_command(c, prompt, p=None, resume=None):
     ai = c.get("ai", {})
     tpl = ai.get("command") or DEFAULT_AI_COMMAND
     mode = ai.get("permission_mode") or "bypassPermissions"
@@ -1415,7 +1416,23 @@ def ai_command(c, prompt, p=None):
         i += 1
     if model and "--model" not in cleaned:
         cleaned += ["--model", model]
+    # 续话:把上一轮的 session_id 接上,claude 会带着完整上下文继续
+    if resume and "--resume" not in cleaned and "-r" not in cleaned:
+        cleaned += ["--resume", str(resume)]
     return cleaned
+
+
+def parse_cli_json(out):
+    """解析 `claude --output-format json` 的结果信封。
+    自定义 CLI(workbench.json 可换)输出纯文本时返回 None,调用方走原文本路径。"""
+    s = (out or "").strip()
+    if not (s.startswith("{") and s.endswith("}")):
+        return None
+    try:
+        d = json.loads(s)
+    except json.JSONDecodeError:
+        return None
+    return d if isinstance(d, dict) and "result" in d else None
 
 
 def auth_hint(msg, env=None):
@@ -1433,6 +1450,7 @@ def auth_hint(msg, env=None):
 
 def run_job(job_id, cmd, env=None):
     env = job_env() if env is None else env
+    extra = {}          # 超时/找不到 CLI 时也要有,否则下面 update 会炸
     with JOBS_LOCK:
         JOBS[job_id]["status"] = "running"
         JOBS[job_id]["started"] = now_iso()
@@ -1445,6 +1463,15 @@ def run_job(job_id, cmd, env=None):
         err = strip_ansi((r.stderr or "")).strip()
         status = "done" if ok else "failed"
         hint = ""
+        env_j = parse_cli_json(out)
+        if env_j is not None:                    # JSON 信封:取正文,顺带拿 session/成本
+            extra = {"session_id": env_j.get("session_id") or "",
+                     "cost_usd": env_j.get("total_cost_usd") or 0,
+                     "turns": env_j.get("num_turns") or 0,
+                     "duration_ms": env_j.get("duration_ms") or 0}
+            out = str(env_j.get("result") or "").strip()
+            if env_j.get("is_error"):            # CLI 退出码 0 但内部报错
+                ok, status = False, "failed"
         if not ok:
             hint = auth_hint(err + "\n" + out, env)
         result = out if ok else (err or out or "无输出")
@@ -1456,6 +1483,7 @@ def run_job(job_id, cmd, env=None):
         JOBS[job_id].update({"status": status, "ended": now_iso(),
                              "output": result[-8000:], "hint": hint,
                              "artifacts": extract_artifacts(result)})
+        JOBS[job_id].update(extra)
         rec = dict(JOBS[job_id])
     try:
         JOBS_DIR.mkdir(exist_ok=True)
@@ -1509,15 +1537,55 @@ def extract_artifacts(text, limit=12):
     return out
 
 
-def submit_job(c, title, prompt, category=None):
+def chat_jobs(chat_id):
+    """一条对话 = 共享 chat_id 的任务,按创建时间排序。"""
+    with JOBS_LOCK:
+        js = [dict(j) for j in JOBS.values() if j.get("chat_id") == chat_id]
+    return sorted(js, key=lambda j: (j.get("created") or "", j.get("id") or ""))
+
+
+def chat_list(limit=40):
+    """对话列表:按最后活动倒序,标题取首轮。"""
+    with JOBS_LOCK:
+        js = [dict(j) for j in JOBS.values() if j.get("chat_id")]
+    by = {}
+    for j in sorted(js, key=lambda x: (x.get("created") or "", x.get("id") or "")):
+        cid = j["chat_id"]
+        c = by.setdefault(cid, {"id": cid, "title": j.get("title") or "新对话",
+                                "created": j.get("created", ""), "turns": 0,
+                                "cost_usd": 0, "provider": j.get("provider", "")})
+        c["turns"] += 1
+        c["cost_usd"] = round(c["cost_usd"] + (j.get("cost_usd") or 0), 4)
+        c["last"] = j.get("created", "")
+        c["running"] = j.get("status") in ("queued", "running")
+    return sorted(by.values(), key=lambda x: x.get("last") or "", reverse=True)[:limit]
+
+
+def resume_target(chat_id, provider_label):
+    """取该对话最后一次成功的 session_id 用于续话。
+    供应商换过就不续 —— session 存在各自的历史里,跨供应商 resume 必然失败。"""
+    if not chat_id:
+        return None, ""
+    prev = [j for j in chat_jobs(chat_id) if j.get("session_id")]
+    if not prev:
+        return None, ""
+    last = prev[-1]
+    if (last.get("provider") or "") != (provider_label or ""):
+        return None, f"供应商已从「{last.get('provider')}」换成「{provider_label}」,本轮重新开始上下文。"
+    return last["session_id"], ""
+
+
+def submit_job(c, title, prompt, category=None, chat_id=None):
     job_id = uuid.uuid4().hex[:12]
     # 供应商取一次快照:命令与环境必须来自同一份配置,否则中途切换会命令/key 错配
     p = active_provider()
-    cmd, env = ai_command(c, prompt, p), job_env(p)
+    resume, note = resume_target(chat_id, p.get("label", ""))
+    cmd, env = ai_command(c, prompt, p, resume=resume), job_env(p)
     job = {"id": job_id, "title": title[:120], "prompt": prompt[:4000],
            "category": category or guess_category(title),
            "status": "queued", "created": now_iso(), "output": "", "hint": "",
-           "artifacts": [],
+           "artifacts": [], "chat_id": chat_id or "", "resumed": bool(resume),
+           "note": note, "session_id": "", "cost_usd": 0,
            "model": (p.get("model") if is_third_party(p)
                      else (c.get("ai", {}).get("model") or "")) or "默认",
            "provider": p.get("label", "")}
@@ -1801,6 +1869,10 @@ class Handler(BaseHTTPRequestHandler):
             elif u.path == "/api/search":
                 kw = q.get("q", "").strip()
                 self._send(200, {"q": kw, "hits": search_all(kw) if len(kw) >= 2 else []})
+            elif u.path == "/api/chat":
+                cid = (q.get("id") or "").strip()
+                self._send(200, {"chat_id": cid, "turns": chat_jobs(cid) if cid else [],
+                                 "chats": chat_list()})
             elif u.path == "/api/jobs":
                 kw = (q.get("q") or "").strip().lower()
                 cat = q.get("cat") or ""
@@ -2395,8 +2467,14 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("prompt 不能为空")
                 if not claude_available():
                     raise FileNotFoundError("本机未找到 claude CLI")
-                job = submit_job(c, body.get("title") or prompt[:60], prompt)
+                cid = (body.get("chat_id") or "").strip()[:32]
+                if cid and not re.fullmatch(r"[a-z0-9]{6,32}", cid):
+                    raise ValueError("chat_id 非法")
+                job = submit_job(c, body.get("title") or prompt[:60], prompt,
+                                 chat_id=cid or None)
                 self._send(200, {"job": job})
+            elif u.path == "/api/chat-new":
+                self._send(200, {"ok": True, "chat_id": uuid.uuid4().hex[:12]})
             elif u.path == "/api/ai-quick":
                 # 同步小任务:生成一段文本直接返回(如定时任务指令改写),不进任务队列
                 prompt = (body.get("prompt") or "").strip()
