@@ -39,9 +39,13 @@ border-left:2px solid transparent;transition:color .15s}
 #side a.on{color:var(--ink);font-weight:600;border-left-color:var(--accent);background:var(--accent-soft)}
 #side a:hover{color:var(--ink)}
 #side .foot{margin-top:auto;font-size:11px;color:var(--muted);padding:14px 22px 0;
-border-top:1px solid var(--line);line-height:2;margin-left:0}
-#side .flinks{display:flex;flex-direction:column;gap:1px;margin:8px 0 6px}
-#side .flinks a{font-size:11.5px;color:var(--muted);cursor:pointer;text-decoration:none}
+border-top:1px solid var(--line);line-height:1.7;margin-left:0;padding-bottom:12px}
+#side .fline{font-size:11px;line-height:1.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#side .flinks{display:flex;gap:10px;margin-top:6px}
+/* 必须显式清掉 #side a 的导航样式(display:block + padding:8px 22px),
+   否则三个链接各多出 44px 横向内边距,直接撑出侧栏 */
+#side .flinks a{display:inline;padding:0;border-left:none;
+  font-size:11px;color:var(--muted);cursor:pointer;text-decoration:none;white-space:nowrap}
 #side .flinks a:hover{color:var(--accent)}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .dot.ok{background:var(--ok)}.dot.off{background:var(--warn)}.dot.bad{background:var(--bad)}
@@ -621,16 +625,19 @@ function startPoll(){if(!pollTimer)pollTimer=setInterval(pollJobs,3000);pollJobs
 function paintSide(){
   const c=S.claude,mcp=S.mcp||[];
   const mcpTxt=mcp.map(m=>`<span class="dot ${m.status==="live"?"ok":"off"}"></span>${esc(m.id)} ${m.status==="live"?"在线":"未启动"}`).join("<br>")||"无 MCP";
+  const live=mcp.filter(m=>m.status==="live").length;
+  const mcpShort=mcp.length?`MCP ${live}/${mcp.length}`:"无 MCP";
   $("#sidefoot").innerHTML=
-    `<span class="dot ${c.available?"ok":"bad"}"></span>claude ${c.available?"可用":"未登录"}<br>`+
-    mcpTxt+`<br><span class="dot ok"></span>${esc(S.pack.id)}@${esc(S.pack.version)}`+
-    // 三个次级入口各占一行:侧栏只有 198px 宽,并排会把分隔符挤到单独一行
+    // 页脚压到三行:状态、版本、次级入口。侧栏是导航区,不该被状态信息占掉三分之一
+    `<div class="fline"><span class="dot ${c.available?"ok":"bad"}"></span>claude ${
+      c.available?"可用":"未登录"} <span class="muted">· ${mcpShort}</span></div>`+
+    `<div class="fline muted">${esc(S.pack.id)}@${esc(S.pack.version)}${
+      S.config.version?` · v${esc(S.config.version)}`:""}</div>`+
     `<div class="flinks">`+
-      `<a class="f" onclick="goInbox()">收件箱${S.inbox.length?` (${S.inbox.length})`:""}</a>`+
-      `<a class="f" href="#/trash">回收站</a>`+
-      `<a class="f" href="#/mask">映射表</a>`+
-    `</div>`+
-    (S.config.version?`<span class="muted" style="font-size:11px">工作台 v${esc(S.config.version)}</span>`:"");
+      `<a onclick="goInbox()">收件箱${S.inbox.length?`·${S.inbox.length}`:""}</a>`+
+      `<a href="#/trash">回收站</a>`+
+      `<a href="#/mask">映射表</a>`+
+    `</div>`;
   document.querySelectorAll("#side a").forEach(a=>{
     const r=a.dataset.r,h=location.hash||"#/";
     const on=(r==="dash"&&(h==="#/"||h==="#"))||(r!=="dash"&&h.startsWith("#/"+r))||
@@ -1556,8 +1563,7 @@ async function restoreCustomer(id){
 /* 侧栏「收件箱」入口:跳到知识库页并选中 inbox。
    原来只在知识库树里、且**空的时候整条不渲染** —— 形成死结:
    想用它得先看到它,想看到它得先往里放文件,而放文件的入口就在它身上。 */
-function goInbox(){KN.sel="@inbox";location.hash="#/knowledge";
-  if(location.hash==="#/knowledge")route();}
+function goInbox(){location.hash="#/inbox";}
 
 function delBtn(onclick,title){
   return `<button class="del" title="${attr(title||"删除")}" onclick="${onclick}">`+
@@ -1788,30 +1794,33 @@ function knFileRow(f,showDir){
     ${showDir&&f.dir?`<span class="small muted">${esc(f.dir)}</span>`:""}
     <span style="flex:1"></span><span class="small muted num">${(f.size/1024).toFixed(0)} KB</span>
     ${delBtn(`mDelete('${attr(f.path)}','knowledge','${attr(f.name)}','该文件移入回收站。若它已被提取过,提取产物需重新「提取新增文档」后才会同步。')`)}</li>`;}
+/* 收件箱:独立页面。它是「还没决定放哪」的中转区,和知识库是两件事 ——
+   塞进知识库的目录树里会让人以为它是知识库的一个文件夹。 */
+function vInbox(){
+  return `<h2>收件箱</h2>
+  <div class="sub">临时中转区 · 还没决定放哪的文件先扔这里 · 目录 <span class="mono">inbox/</span></div>
+  <div class="bar">
+    <button class="pri" ${S.inbox.length?"":"disabled"} onclick="mAI('整理收件箱',
+      '阅读 inbox/ 下所有文件,按 CLAUDE.md 目录规范归类到 knowledge/ 或对应客户/项目目录,整理完报告每个文件去向。')">AI 整理收件箱</button>
+    <button onclick="openLocal('inbox')">在 Finder 打开(把文件拖进去)</button>
+    <span class="sp"></span><span class="small muted">共 ${S.inbox.length} 个文件</span>
+  </div>
+  ${S.inbox.length
+    ? `<div class="card" style="padding:6px 14px 10px"><ul class="plain">${
+        S.inbox.map(f=>knFileRow(f,true)).join("")}</ul></div>`
+    : `<div class="card small muted" style="line-height:1.9">
+        <b style="color:var(--ink)">不用决定放哪,先扔进来。</b><br>
+        随手收到的文件(客户发来的资料、会上拍的材料、下载的报告)先丢这里,
+        回头点「AI 整理收件箱」让它按目录规范归类到知识库或对应客户/项目,或者你自己整理。<br>
+        <span style="color:var(--warn)">整理完记得清空 —— 这里是中转站,不是仓库。</span>
+      </div>`}`;}
+
 function vKnowledge(){
   const {root,filesByDir}=knBuild();
-  const isInbox=KN.sel==="@inbox";
-  const inboxNode=`<div class="tn ${isInbox?"sel":""}" data-p="@inbox"
-    style="padding-left:6px;margin-top:6px;border-top:1px solid var(--line);padding-top:9px">
-    <span class="chev">·</span>收件箱(${S.inbox.length})</div>`;
-  const treeHtml=knNode(root,0)+inboxNode;
+  const treeHtml=knNode(root,0);
   // 右侧:当前文件夹
   let right;
-  if(isInbox){
-    right=`<div class="card"><h3>收件箱 / 待整理 <span class="tag ${S.inbox.length?"y":"o"}">${S.inbox.length}</span></h3>
-    ${S.inbox.length
-      ? `<ul class="plain">${S.inbox.map(f=>knFileRow(f,true)).join("")}</ul>`
-      : `<div class="small muted" style="line-height:1.9;margin:6px 0 2px">
-          <b>临时中转区 —— 不用决定放哪,先扔进来。</b><br>
-          随手收到的文件(客户发来的资料、会上拍的材料、下载的报告)先丢这里,
-          回头点「AI 整理收件箱」让它按目录规范归类到知识库或对应客户/项目,或者你自己整理。<br>
-          <span style="color:var(--warn)">整理完记得清空 —— 这里是中转站,不是仓库。</span>
-        </div>`}
-    <div class="bar" style="margin:10px 0 0">
-      <button class="sm" ${S.inbox.length?"":"disabled"} onclick="mAI('整理收件箱',
-        '阅读 inbox/ 下所有文件,按 CLAUDE.md 目录规范归类到 knowledge/ 或对应客户/项目目录,整理完报告每个文件去向。')">AI 整理收件箱</button>
-      <button class="sm" onclick="openLocal('inbox')">在 Finder 打开(把文件拖进去)</button></div></div>`;
-  }else{
+  {
     const files=(filesByDir[KN.sel]||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,"zh"));
     right=`<div class="card"><h3 style="word-break:break-all">${esc(KN.sel)}
       <span class="tag o">${files.length} 个文件</span></h3>
@@ -3208,6 +3217,7 @@ async function route(){
   else if(h==="#/skills")html=vSkills();
   else if(h==="#/knowledge")html=vKnowledge();
   else if(h==="#/ai")html=vAI();
+  else if(h==="#/inbox")html=vInbox();
   else if(h==="#/trash"){html=`<div class="empty small">加载中…</div>`;
     vTrash().then(x=>{if(location.hash==="#/trash")$("#view").innerHTML=x;});}
   else if(h==="#/mask"){html=`<div class="empty small">加载中…</div>`;

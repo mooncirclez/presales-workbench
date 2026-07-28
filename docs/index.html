@@ -286,19 +286,21 @@ footer .r{text-align:right}
       <span>Presales Workbench</span>
     </div>
 
-    <h1>售前的一整条链路,<br>装在<em>你自己的磁盘</em>上</h1>
+    <h1>用得起公网大模型,<br><em>又不把客户名字交出去</em></h1>
 
     <p class="lede">
-      客户决策链、商机流水线、交付物生成、拜访纪要、知识库 —— 全部落成本地的
-      <b>Markdown 与 JSON</b>。AI 通过 Claude Code 在本机干活,
-      <b>基于你的真实资料,而不是编。</b>
+      给售前工程师的本地 AI 工作台。客户档案落盘那一刻<b>就已经是代号</b>,
+      真名只留在你机器上的一张映射表里 —— AI 读磁盘,天然只看得到
+      <code>sl银行</code>、<code>张sf</code>。
+      <b>不是靠提示词求它别看,是把工具层封死。</b>
     </p>
 
     <div class="tags">
-      <span class="tag on">MIT 开源</span>
+      <span class="tag on">写入即代号化</span>
+      <span class="tag on">可读范围硬隔离</span>
+      <span class="tag">MIT 开源</span>
       <span class="tag">macOS</span>
       <span class="tag">Python 标准库,零核心依赖</span>
-      <span class="tag">数据不出本机</span>
     </div>
 
     <div class="term">
@@ -312,19 +314,87 @@ footer .r{text-align:right}
     </div>
 
     <div class="stats">
-      <div class="stat"><b>10</b><span>个工作面</span></div>
-      <div class="stat"><b>01–07</b><span>段交付物流水线</span></div>
+      <div class="stat"><b>1</b><span>处真名存放点</span></div>
+      <div class="stat"><b>127.0.0.1</b><span>服务唯一绑定</span></div>
       <div class="stat"><b>0</b><span>个核心依赖</span></div>
       <div class="stat"><b>1</b><span>条命令部署</span></div>
     </div>
   </div>
 </header>
 
-<!-- ══ 01 它解决什么 ══ -->
-<section class="sec">
+<!-- ══ 01 安全 ══ -->
+<section class="sec" id="security">
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-no">01</div>
+      <div>
+        <h2>怎么在保住客户数据的前提下,用公网大模型</h2>
+        <p>售前手里是报价、决策链、组织架构。想用 AI 干活,又不能把这些原样发出去。
+           工作台的答案不是「相信模型」,是<b>四层机制,每层都不依赖模型自觉</b>。</p>
+      </div>
+    </div>
+
+    <div class="rule">
+      <b>第 1 层 · 写入即代号化</b>
+      <p>客户名、客户方联系人、地址在<b>落盘那一刻</b>就换成假名 ——
+         磁盘上存的目录名就是 <code>sl银行</code>,纪要里写的是 <code>张sf</code>。
+         不是「明文存着、出口再过滤」,而是真名<b>只存在 <code>.mask/map.json</code> 一处</b>。
+         少一个明文副本,就少一条泄露路径;AI 读磁盘时天然只看得到代号。</p>
+    </div>
+
+    <div class="rule">
+      <b>第 2 层 · 可读范围是硬边界,不是提示词</b>
+      <p>知识库按目录逐个勾选放通。没勾中的目录,AI <b>读不到</b> ——
+         用的是 CLI 的 <code>permissions.deny</code> 规则。
+         实测:它能盖过 <code>--permission-mode bypassPermissions</code>,
+         且封住 <code>Read</code> 会连带拦下该路径的 Grep / Glob。</p>
+      <p>两处踩过的坑已经堵上:<b>①</b> 只挡原文不够 ——
+         <code>knowledge/.extracted/</code> 存着同一批资料的提取全文,
+         漏掉它时实测 Grep 一把命中 180 个文件,等于锁了正门开了后门;
+         <b>②</b> 只 deny <code>Read</code> 时,模型会「讲原则」不用 <code>cat</code> 绕开 ——
+         但那是<b>模型自愿</b>。工作台支持切 DeepSeek / Kimi,换个模型完全可能直接绕。
+         要边界就得封到工具层,所以 <code>Bash</code> 默认一起封。</p>
+    </div>
+
+    <div class="rule">
+      <b>第 3 层 · 凭证与真名同等对待</b>
+      <p>映射表 <code>.mask/</code>、API key 与任务日志 <code>.workbench/</code>、
+         回收站 <code>.trash/</code> —— 三处一律对 AI 封读。
+         回收站单独封是因为:它躺的是<b>删除那一刻的原样副本</b>,
+         脱敏之前建的数据删掉后仍带真名,审计时实测有 4 个这类文件 AI 读得到。</p>
+      <p>第三方模型的 API key 存本机 <code>.workbench/providers.json</code>,
+         文件权限 <code>600</code>、已 gitignore,<b>任何接口响应只回脱敏值</b>
+         (<code>sk-abc…1234</code>),明文不出后端。</p>
+    </div>
+
+    <div class="rule">
+      <b>第 4 层 · 数据本来就没离开过这台机器</b>
+      <p>服务只绑 <code>127.0.0.1</code>,不对外暴露。客户档案是你磁盘上的
+         Markdown 和 JSON,可以 git、可以 grep、可以用任何编辑器打开。
+         工作台删了,资产还在。</p>
+    </div>
+
+    <div class="note">
+      <b>把话说清楚:它保护到什么程度</b>
+      <p>代号是<b>可读假名</b>,不是不可读编号 —— <code>示例银行 → sl银行</code>
+         保留了「是什么」,抹掉了「是谁」。这是为可读性做的取舍,
+         代价是<b>在特定行业里,<code>sl银行</code> 有可能被反推出来</b>。
+         需要更强保护就该用不可读编号,那会牺牲你自己看档案的效率。</p>
+      <p>另外:<b>商机金额、方案内容、技术细节不在脱敏范围内</b>,仍会随指令发给模型;
+         我方同事姓名不登记(映射表只收客户侧实体);导出不自动还原,
+         需要你拿替换清单做一次人工处理。</p>
+      <p>如果你的合规要求是「任何字节都不得出网」,那答案不是这个工作台,
+         而是本地私有化模型 —— 工作台支持配任意 Anthropic 兼容端点,
+         把 BASE_URL 指向你内网的模型服务即可。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 02 它解决什么 ══ -->
+<section class="sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-no">02</div>
       <div>
         <h2>它解决什么问题</h2>
         <p>售前的信息是碎的,而碎掉的代价要在报价、投标、交底的时候一次性还。</p>
@@ -360,7 +430,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">02</div>
+      <div class="sec-no">03</div>
       <div>
         <h2>一眼看清盘子</h2>
         <p>每个数字都由后端 <code>compute_dashboard()</code> 算一次,前端纯展示 —— 没有手工维护的统计表。</p>
@@ -378,7 +448,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">03</div>
+      <div class="sec-no">04</div>
       <div>
         <h2>核心能力</h2>
         <p>不是九个互不相干的页面,是同一份数据的九个视角。</p>
@@ -467,7 +537,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">04</div>
+      <div class="sec-no">05</div>
       <div>
         <h2>还有这些</h2>
         <p>都挂在同一份数据上,不需要二次录入。</p>
@@ -520,7 +590,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">05</div>
+      <div class="sec-no">06</div>
       <div>
         <h2>四条设计原则</h2>
         <p>这些决定了它三年后还能不能用。</p>
@@ -556,7 +626,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">06</div>
+      <div class="sec-no">07</div>
       <div>
         <h2>关于「AI 不许编」</h2>
         <p>售前交付物里的一个编造数字,代价可能是一个标。所以这条不是建议,是硬约束 —— 下面两条原文来自随包分发的 <code>CLAUDE.md</code>。</p>
@@ -586,7 +656,7 @@ footer .r{text-align:right}
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">07</div>
+      <div class="sec-no">08</div>
       <div>
         <h2>快速开始</h2>
         <p>两个硬性前提:<b>macOS</b>,以及已安装并登录的 <a href="https://claude.com/claude-code">Claude Code</a> CLI。其余都是可选的,缺了只降级。</p>
@@ -629,7 +699,7 @@ PORT=8919 ./setup.sh    <span class="c"># 换端口</span></pre>
 <section class="sec">
   <div class="wrap">
     <div class="sec-head">
-      <div class="sec-no">08</div>
+      <div class="sec-no">09</div>
       <div>
         <h2>老实话:它还不行的地方</h2>
         <p>装之前先知道,比装完再发现好。</p>
