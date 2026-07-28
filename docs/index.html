@@ -123,16 +123,6 @@ h1 em{font-style:normal;color:var(--accent)}
 .stat b small{font-size:14px;font-weight:600;letter-spacing:0;margin-left:2px}
 .stat span{display:block;font-size:12.5px;color:var(--muted);margin-top:5px}
 
-/* 化名演示条 */
-.maskdemo{margin:26px 0 0;background:var(--term-bg);border-radius:12px;
-  padding:22px 30px;display:flex;align-items:center;justify-content:center;
-  gap:36px;flex-wrap:wrap}
-.maskdemo .lb{font-size:11px;letter-spacing:1.8px;color:#6b7280;
-  text-transform:uppercase;margin-bottom:6px;font-weight:700;text-align:center}
-.maskdemo .v{font:600 18px/1.5 var(--mono);color:#e6e8ee;text-align:center}
-.maskdemo .v.hide{color:#4b515e;text-decoration:line-through}
-.maskdemo .v.on{color:#6ee7a8}
-.maskdemo .arw{color:#5c95ff;font-size:22px;font-weight:700}
 /* 折叠的技术细节 */
 details.tech{margin-top:26px;border:1px solid var(--line);border-radius:12px;
   background:var(--card);overflow:hidden}
@@ -356,7 +346,7 @@ footer .r{text-align:right}
 
     <div class="limits">
       <div class="limit"><b>① 客户一律化名</b><span>档案存进电脑那一刻,客户名和联系人就换成了化名。
-        AI 看到的是「yf科技」,不知道那是谁 —— 真名只存在你机器上的一张对照表里,别处没有。</span></div>
+        AI 看到的只是代号,<b>不知道背后是谁</b> —— 真名只存在你机器上的一张对照表里,别处没有。</span></div>
       <div class="limit"><b>② 看什么,由你授权</b><span>资料按目录逐项勾选放行。
         没勾中的,AI 不是「答应不看」,是<b>打不开</b> —— 这是门锁,不是口头约定。</span></div>
       <div class="limit"><b>③ 要害锁进保险柜</b><span>真名对照表、各家模型的密钥、回收站 ——
@@ -365,15 +355,9 @@ footer .r{text-align:right}
         档案就是磁盘上的普通文件,哪天不用工作台了,资产原样还在。</span></div>
     </div>
 
-    <div class="maskdemo">
-      <div><div class="lb">你录入</div><div class="v hide">云帆科技 · 采购总监 李海燕</div></div>
-      <div class="arw">→</div>
-      <div><div class="lb">AI 看到的</div><div class="v on">yf科技 · 采购总监 李hy</div></div>
-    </div>
-
     <div class="note">
       <b>把话说清楚:它保护到什么程度</b>
-      <p>化名保留了类别特征(云帆科技 → yf科技),你自己好认 ——
+      <p>化名可读、保留行业类别,你自己翻档案一看就认得 ——
          代价是<b>同行有可能猜出个大概</b>。另外,谈的<b>金额和方案内容仍要发给模型</b>,
          否则 AI 没法替你干活。如果公司要求「任何内容都不出网」,
          工作台也支持改接你们内网的模型,其余一切照常用。</p>
@@ -733,7 +717,7 @@ PORT=8919 ./setup.sh    <span class="c"># 换端口</span></pre>
       <div class="limit"><b>无自动化测试</b><span>改动靠手工验证。</span></div>
       <div class="limit"><b>数据量假设中小</b><span>全文搜索是暴力遍历,客户 / 项目上百后会变慢。</span></div>
       <div class="limit"><b>成本可见但不设限</b><span>每轮显示耗时、token 与花费,但没有额度上限或超额拦截。</span></div>
-      <div class="limit"><b>代号是可读假名</b><span>云帆科技 → yf科技,保留类别特征便于自己阅读 ——
+      <div class="limit"><b>代号是可读假名</b><span>化名可读、保留行业类别,便于自己翻档案 ——
         代价是在特定行业内<b>有可能被反推</b>。要更强保护得换不可读编号。</span></div>
       <div class="limit"><b>脱敏范围有边界</b><span>只覆盖客户名、客户方联系人与地址。
         <b>金额、方案内容、技术细节不脱敏</b>,仍会随指令发给模型。</span></div>

@@ -26,12 +26,12 @@ h1 em{font-style:normal;color:#9db6ff}
 .sub b{color:#fff;font-weight:700}
 
 /* 中部:四层 */
-.mid{padding:44px 72px 0}
+.mid{padding:54px 72px 0}
 .eyebrow{font-size:12px;letter-spacing:3px;color:var(--muted);font-weight:700;
   text-transform:uppercase;margin-bottom:20px}
-.layers{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.layers{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .ly{background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:22px 24px;position:relative}
+  padding:26px 28px;position:relative}
 .ly .n{font:700 11px var(--mono);color:var(--accent);letter-spacing:1px;
   padding-left:9px;border-left:2px solid var(--accent);margin-bottom:10px;display:block}
 .ly>b{display:block;font-size:19px;letter-spacing:-.3px;margin-bottom:7px}
@@ -40,29 +40,17 @@ h1 em{font-style:normal;color:#9db6ff}
 .ly code{font-family:var(--mono);font-size:13px;background:var(--soft);
   color:var(--accent);padding:1px 6px;border-radius:5px}
 
-/* 代号演示 */
-.demo{margin-top:18px;background:#14161c;border-radius:14px;padding:22px 30px;
-  display:flex;align-items:center;justify-content:center;gap:38px}
-.demo .col{flex:none;text-align:center}
-.demo .lb{font-size:12px;letter-spacing:1.6px;color:#6b7280;
-  text-transform:uppercase;margin-bottom:8px;font-weight:700}
-.demo .v{font:600 21px/1.5 var(--mono);color:#e6e8ee}
-.demo .v.hide{color:#4b515e;text-decoration:line-through}
-.demo .v.on{color:#6ee7a8}
-.demo .arw{color:#5c95ff;font-size:26px;flex:none;font-weight:700}
-.demo .tail{font-size:13.5px;color:#8b93a3;margin-top:14px;line-height:1.6}
-
 /* 老实话 */
-.honest{margin-top:16px;background:var(--warnbg);border:1px solid #f0e2c0;
-  border-left:3px solid var(--warn);border-radius:12px;padding:18px 24px}
+.honest{margin-top:24px;background:var(--warnbg);border:1px solid #f0e2c0;
+  border-left:3px solid var(--warn);border-radius:12px;padding:22px 26px}
 .honest>b{font-size:15px;color:var(--warn);display:block;margin-bottom:5px}
 .honest span b{color:#6b5310;font-weight:700}
 .honest span{font-size:14px;line-height:1.65;color:#7c6318;display:block}
 
 /* 能力带 */
-.band{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:20px;
+.band{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-top:24px;
   background:var(--line);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-.bi{background:var(--card);padding:17px 20px}
+.bi{background:var(--card);padding:20px 22px}
 .bi b{display:block;font-size:16px;margin-bottom:4px}
 .bi span{display:block;font-size:13px;color:var(--muted);line-height:1.55}
 
@@ -95,7 +83,7 @@ h1 em{font-style:normal;color:#9db6ff}
   <div class="eyebrow">四道保障 · 不靠 AI 自觉,靠机制</div>
   <div class="layers">
     <div class="ly"><span class="n">01</span><b>客户一律化名</b>
-      <span>存进电脑那一刻就换成化名,AI 看到的是「yf科技」,<b>不知道那是谁</b>。真名只在你电脑的一张对照表里。</span></div>
+      <span>存进电脑那一刻就换成化名。AI 看到的只是代号,<b>不知道背后是谁</b>;真名只在你电脑的一张对照表里。</span></div>
     <div class="ly"><span class="n">02</span><b>看什么,由你授权</b>
       <span>资料逐项勾选放行。没勾的 AI 不是「答应不看」,是<b>打不开</b> —— 是门锁,不是口头约定。</span></div>
     <div class="ly"><span class="n">03</span><b>要害锁进保险柜</b>
@@ -104,21 +92,9 @@ h1 em{font-style:normal;color:#9db6ff}
       <span>工作台在本机运行,不上传云端。档案就是磁盘上的文件,不用了资产还在。</span></div>
   </div>
 
-  <div class="demo">
-    <div class="col">
-      <div class="lb">你录入</div>
-      <div class="v hide">云帆科技 · 采购总监 李海燕</div>
-    </div>
-    <div class="arw">→</div>
-    <div class="col">
-      <div class="lb">AI 看到的</div>
-      <div class="v on">yf科技 · 采购总监 李hy</div>
-    </div>
-  </div>
-
   <div class="honest">
     <b>把话说清楚:它保护到什么程度</b>
-    <span>化名保留类别特征(云帆科技 → yf科技),你自己好认 —— 代价是<b>同行可能猜出个大概</b>。
+    <span>化名可读、保留行业类别,你自己好认 —— 代价是<b>同行可能猜出个大概</b>。
       谈的金额和方案内容<b>仍要发给模型</b>,AI 才干得了活。公司要求全程不出网?可改接内网模型。</span>
   </div>
 
