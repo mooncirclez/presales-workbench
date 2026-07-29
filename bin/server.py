@@ -1767,6 +1767,32 @@ def auth_hint(msg, env=None):
     return "本机 claude CLI 登录态失效:请在终端运行 `claude login` 重新登录后重试。"
 
 
+def bash_auto_off():
+    """任务跑完自动关掉 Bash。
+
+    为什么放后端:用户可能关掉页面就走了,靠前端定时器不可靠。
+    为什么要等所有任务都停:多个任务并行时,先完成的那个不能把还在跑的那个的
+    Bash 抽走 —— 会让它中途失去工具能力。
+    """
+    cpath = ROOT / "workbench.json"
+    conf = wb.load_json(cpath) or {}
+    ai = conf.get("ai") or {}
+    if not (ai.get("allow_bash") and ai.get("bash_auto_off")):
+        return
+    with JOBS_LOCK:
+        busy = any(j.get("status") in ("running", "queued") for j in JOBS.values())
+    if busy:
+        return
+    ai["allow_bash"] = False
+    ai["bash_auto_off"] = False
+    conf["ai"] = ai
+    try:
+        cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
+                         encoding="utf-8")
+    except OSError:
+        pass
+
+
 def run_job(job_id, cmd, env=None):
     env = job_env() if env is None else env
     extra = {}          # 超时/找不到 CLI 时也要有,否则下面 update 会炸
@@ -1844,6 +1870,7 @@ def run_job(job_id, cmd, env=None):
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except OSError:
         pass
+    bash_auto_off()
 
 
 def save_jobs_log():
@@ -1884,19 +1911,31 @@ def guess_category(title):
     return "other"
 
 
+# 先宽松抓出所有"像文件路径"的串,再靠**文件是否真实存在**过滤 ——
+# 原先只认 `customers/…` 这类相对路径开头,而模型经常回绝对路径
+# (实测输出的是 /Users/…/presales-workbench/产品介绍.html),一个都抓不到。
 ARTIFACT_RE = re.compile(
-    r"(?:customers|projects|knowledge|scenarios|calendar|archive|inbox|plugins)"
-    r"/[^\s，,。;;、'\"`()()\[\]<>*|]+"
+    r"[^\s，,。;;、'\"`()()\[\]<>*|]+"
     r"\.(?:md|xlsx|docx|pdf|pptx|html|csv|json|txt)")
+# 框架文件不是"产出",别混进交付物列表
+ARTIFACT_SKIP = {"CLAUDE.md", "README.md", "LICENSE.md", "CHANGELOG.md", "workbench.json"}
 
 
 def extract_artifacts(text, limit=12):
     """从任务输出里认出真实存在的产出文件,供界面直接跳转。"""
     out = []
+    root_s = str(ROOT)
     for m in ARTIFACT_RE.findall(text or ""):
         rel = m.strip().rstrip(".,;:")
-        if rel in out:
+        if rel.startswith(root_s):                 # 绝对路径 → 转成相对工作台
+            rel = rel[len(root_s):].lstrip("/")
+        elif rel.startswith("/"):                  # 工作台之外的绝对路径,不是产出
             continue
+        rel = rel.lstrip("./")
+        if not rel or rel in out or rel in ARTIFACT_SKIP:
+            continue
+        if rel.split("/")[0] in ("bin", ".mask", ".workbench", ".trash"):
+            continue                               # 框架代码与内部目录不算交付物
         try:
             p = safe_path(rel)
         except (PermissionError, ValueError):
@@ -2246,6 +2285,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "extra_deny": _c.get("ai", {}).get("extra_deny") or [],
                                  "workbench_dir": ROOT.name,
                                  "allow_bash": bool(_c.get("ai", {}).get("allow_bash")),
+                                 "bash_auto_off": bool(_c.get("ai", {}).get("bash_auto_off")),
                                  "deny": ai_deny_rules(_c)})
             elif u.path == "/api/trash":
                 self._send(200, {"items": load_trash()})
@@ -2273,10 +2313,17 @@ class Handler(BaseHTTPRequestHandler):
                 n_arch = sum(1 for j in everyj if j.get("archived"))
                 # 归档任务默认不进列表(但仍留在它所属的对话里)
                 allj = [j for j in everyj if bool(j.get("archived")) == want_arch]
-                counts = {}
+                # 计数按**折叠后的行数**算:一个对话不管几轮都只算 1,
+                # 否则筛选标签上的「对话 9」和列表里看到的行数对不上。
+                counts, seen_chat = {}, set()
                 for j in allj:
-                    counts[j.get("category", "other")] = \
-                        counts.get(j.get("category", "other"), 0) + 1
+                    cid = j.get("chat_id")
+                    if cid:
+                        if cid in seen_chat:
+                            continue
+                        seen_chat.add(cid)
+                    c = j.get("category", "other")
+                    counts[c] = counts.get(c, 0) + 1
                 sel = []
                 for j in allj:
                     if cat and j.get("category") != cat:
@@ -2289,7 +2336,36 @@ class Handler(BaseHTTPRequestHandler):
                                          j.get("prompt", "")).lower():
                         continue
                     sel.append(j)
-                self._send(200, {"jobs": sel[:limit], "total": len(allj),
+                # 折叠:一个对话 = 一行(带上它的全部轮次),一次性任务各占一行。
+                # 分组必须在后端做 —— 前端分组时 limit 会把一个对话拦腰截断。
+                gmap = {}
+                for j in sel:
+                    gmap.setdefault(j.get("chat_id") or "#" + j["id"], []).append(j)
+                groups = []
+                for key, js in gmap.items():
+                    js.sort(key=lambda x: x.get("created", ""))
+                    first, last = js[0], js[-1]
+                    arts = list(dict.fromkeys(
+                        a for x in js for a in (x.get("artifacts") or [])))
+                    groups.append({
+                        "kind": "chat" if first.get("chat_id") else "job",
+                        "chat_id": first.get("chat_id", ""),
+                        "title": first.get("title") or "新对话",
+                        "category": first.get("category", "other"),
+                        "status": last.get("status"),      # 折叠行取**最后一轮**的状态
+                        "created": first.get("created", ""),
+                        "last": last.get("created", ""),
+                        "n": len(js),
+                        "cost_usd": round(sum(x.get("cost_usd") or 0 for x in js), 4),
+                        "duration_ms": sum(x.get("duration_ms") or 0 for x in js),
+                        "artifacts": arts,
+                        "provider": last.get("provider", ""),
+                        "model": last.get("model", ""),
+                        "turns": js,                        # 展开层:每轮保留自己的原话
+                    })
+                groups.sort(key=lambda g: g["last"], reverse=True)   # 两类按最后活动统一排
+                self._send(200, {"groups": groups[:limit],
+                                 "jobs": sel[:limit], "total": len(allj),
                                  "matched": len(sel), "counts": counts,
                                  "archived_total": n_arch, "archived_view": want_arch,
                                  "categories": JOB_CATEGORIES, "states": JOB_STATES})
@@ -2812,7 +2888,10 @@ class Handler(BaseHTTPRequestHandler):
                         ed.append(v)
                     conf.setdefault("ai", {})["extra_deny"] = ed
                 if "allow_bash" in body:
-                    conf.setdefault("ai", {})["allow_bash"] = bool(body.get("allow_bash"))
+                    on = bool(body.get("allow_bash"))
+                    conf.setdefault("ai", {})["allow_bash"] = on
+                    # 打开即武装"跑完自动关",除非调用方显式要求常开
+                    conf["ai"]["bash_auto_off"] = on and bool(body.get("auto_off", True))
                 cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
                                  encoding="utf-8")
                 self._send(200, {"ok": True, "deny": ai_deny_rules(conf)})

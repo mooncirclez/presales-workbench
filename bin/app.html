@@ -53,6 +53,11 @@ border-top:1px solid var(--line);line-height:1.7;margin-left:0;padding-bottom:12
 .bub li.pick:hover{background:var(--accent-soft);color:var(--ink)}
 .bub li.pick:hover::after{content:" ＋填入";font-size:11px;color:var(--accent);white-space:nowrap}
 .bub li.picked{background:var(--ok-bg)}
+/* 任务行里的模型标记:比其余元信息稍显眼,方便扫一列看是谁跑的 */
+.jmeta .jmodel{color:var(--ink);font-weight:600}
+.jturns{margin-top:8px;padding-left:12px;border-left:2px solid var(--line)}
+.jturns .job{border:none;padding:8px 0;background:transparent}
+.jturns .job+.job{border-top:1px solid var(--line)}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .dot.ok{background:var(--ok)}.dot.off{background:var(--warn)}.dot.bad{background:var(--bad)}
 /* ---- main ---- */
@@ -533,7 +538,7 @@ function jobQuery(){const p=new URLSearchParams();
   if(JF.archived)p.set("archived","1");
   const s=p.toString();return "/api/jobs"+(s?"?"+s:"");}
 async function pollJobs(){try{
-    const j=await api(jobQuery());S._jobs=j.jobs;S._jobmeta=j;
+    const j=await api(jobQuery());S._jobs=j.jobs;S._groups=j.groups||[];S._jobmeta=j;
     const running=j.jobs.filter(x=>x.status==="running"||x.status==="queued").length;
     $("#jbadge").innerHTML=running?`<span class="tag y">${running}</span>`:"";
     if(location.hash==="#/ai"){paintJobFilter();paintJobs();
@@ -1132,6 +1137,7 @@ async function doDelete(path,kind){try{
 let TRASH=[];
 /* ---------- 映射表:全站唯一显示客户真名的页面 ---------- */
 let MASKTSV="",MASKROWS=[];
+let AIFRESH=false;  // 「从零重做」勾选态,默认关 —— 每次都得主动勾,免得忘了还开着
 async function vMask(){
   let d;try{d=await api("/api/mask-table");}catch(e){return `<div class="empty">读取失败:${esc(e.message)}</div>`;}
   MASKTSV=d.tsv||"";
@@ -1280,8 +1286,11 @@ async function paintBashToggle(){
   cb.checked=!!d.allow_bash;
   const w=$("#bashWarn");
   if(w)w.innerHTML=d.allow_bash?`<p class="small" style="color:var(--warn);margin:0 0 8px">
-    已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b>(原件内容改不掉),
-    也能用 cat 读到被路径规则拒绝的文本。生成 xlsx 之类的任务需要它,用完建议关掉。</p>`:"";}
+    已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b> ——
+    那些原件就在允许读的项目目录里,内容改不掉,路径规则也拦不住(实测 <span class="mono">projects/</span>
+    下有 2 份 docx 含真名)。此外还能联网外发。${d.bash_auto_off
+      ?`<b>本次任务跑完会自动关闭。</b>`
+      :`<b>当前为常开,不会自动关闭。</b>`}</p>`:"";}
 
 /* AI 可达的磁盘范围:默认只有工作台目录,家目录其余部分逐项放行。
    反过来做(默认全拒)是因为黑名单追不上现实 —— 实测家目录 44 个文件夹,
@@ -1340,7 +1349,7 @@ async function delExtraDeny(i){
 
 async function setAllowBash(on){
   try{await api("/api/mask-config",{allow_bash:on});MASKCFG=null;await paintBashToggle();
-    toast(on?"已允许 Bash — 二进制原件重新可达":"已禁用 Bash");}
+    toast(on?"已允许 Bash — 本次任务跑完会自动关闭":"已禁用 Bash");}
   catch(e){toast(e.message);await paintBashToggle();}}
 
 function copyMaskTsv(){
@@ -2618,7 +2627,8 @@ function vAI(){
       <button class="sm" onclick="mDiskScope()" title="AI 能读到磁盘上的哪些地方">磁盘范围</button>
       <label class="small muted" title="Bash 是读二进制原件(docx/xlsx)和跑脚本的唯一途径。目录边界由上方的路径规则管,不靠这个开关">
         <input type="checkbox" id="aiBash" onchange="setAllowBash(this.checked)"
-          style="width:auto;vertical-align:-1px"> 允许 Bash</label>
+          style="width:auto;vertical-align:-1px"> 允许 Bash<span class="small muted"
+          style="font-size:10.5px">(跑完自动关)</span></label>
       <button class="sm" onclick="api('/api/open-claude',{}).then(()=>toast('已打开 Claude App'))
         .catch(e=>toast(e.message,4000))">打开 Claude App</button></div>
     <div id="bashWarn"></div>
@@ -2631,9 +2641,14 @@ function vAI(){
         oninput="chatGrow(this)" onkeydown="chatKey(event)"></textarea>
       <button class="pri" id="chatSend" onclick="sendChat()" ${S.claude.available?"":"disabled"}>发送</button>
     </div>
-    <div class="small muted" style="margin-top:7px">${
-      CHAT.turns.length?`本轮会带上前 ${CHAT.turns.filter(t=>t.status==="done").length} 轮的上下文继续`
-        :"每次发送 = 一次真实 AI 会话(你的额度);产出直接写入工作台文件"}</div></div>
+    <div class="small muted" style="margin-top:7px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span>${CHAT.turns.length?`本轮会带上前 ${CHAT.turns.filter(t=>t.status==="done").length} 轮的上下文继续`
+        :"每次发送 = 一次真实 AI 会话(你的额度);产出直接写入工作台文件"}</span>
+      <label style="white-space:nowrap;cursor:pointer"
+        title="工作台里的历史产出 AI 都读得到,不说它就会拿来改。勾上则要求从零重做">
+        <input type="checkbox" id="aiFresh" style="width:auto;vertical-align:-1px"
+          ${AIFRESH?"checked":""} onchange="AIFRESH=this.checked"> 从零重做,不参考已有产出</label>
+    </div></div>
   ${vModelBar()}
   <div class="sec">定时任务</div>
   <div class="bar"><button onclick="mSched(-1)">新建定时任务</button>
@@ -2870,7 +2885,12 @@ async function sendChat(){
   const base=ta.value.trim();if(!base)return toast("先说点什么");
   if(!S.claude.available)return toast("claude CLI 不可用",4000);
   const r=(S.roles||[]).find(x=>x.id===AIROLE);
-  const prompt=rolePrefix(r)+base;
+  // 「从零重做」:工作台内的历史产出 AI 都读得到(inbox/projects/archive 都不禁),
+  // 不明说它就会当成"上一版"拿来改。这段只进提示词,气泡里仍显示你的原话。
+  const fresh=AIFRESH?"【从零重做】不要读取或参考工作台里任何已有的同类产出"
+    +"(inbox/、projects/、archive/ 下的历史版本一律不看),按下面的要求重新做一版。"
+    +"确有必要参考已有文件时,先说明理由再读。\n\n":"";
+  const prompt=rolePrefix(r)+fresh+base;
   if(!CHAT.id){try{CHAT.id=(await api("/api/chat-new",{})).chat_id;
     localStorage.setItem("wb_chat",CHAT.id);}catch(e){return toast(e.message);}}
   // 乐观上屏:消息立刻变成气泡,输入框才清空 —— 内容不会凭空消失
@@ -2946,6 +2966,12 @@ function fmtTok(n){
 /* 耗时 / token / 花费:三个都有才排得下,没有的自动省略(如文档提取只有耗时) */
 function jobMeta(j){
   const bits=[];
+  // 模型放最前:切过供应商之后,"这条是谁跑的"比耗时更需要一眼看到 ——
+  // 同一条指令用不同模型产出差很多,回看记录时要能对上号
+  if(j.provider||j.model){
+    const m=j.model&&j.model!=="默认"?j.model:"";
+    bits.push(`<span class="jmodel" title="执行这条任务的供应商与模型">${
+      esc(j.provider||"")}${m?(j.provider?" · ":"")+esc(m):""}</span>`);}
   if(j.duration_ms)bits.push(`<span title="耗时">⏱ ${fmtDur(j.duration_ms)}</span>`);
   if(j.tok_in||j.tok_out)bits.push(
     `<span title="token:输入 ${j.tok_in||0}(含缓存读写) / 输出 ${j.tok_out||0}">`+
@@ -2967,10 +2993,45 @@ async function gotoChat(cid){
   const el=$("#thread");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
   toast("已回到该对话,可以接着往下说");}
 
+/* 折叠层:一个对话一行,一次性任务一行,按最后活动时间统一排。
+   一份材料往往要多轮打磨才成型 —— 按轮次平铺会把"一件事"拆成互不相关的几行,
+   成本、耗时、产出也散开,想知道这份东西总共花了多少还得自己加。 */
+let JOPEN={};                       // chat_id → 是否展开
+function toggleJob(k){JOPEN[k]=!JOPEN[k];paintJobs();}
+
 function paintJobs(){
   const el=$("#jobs");if(!el)return;
-  const jobs=S._jobs||[];
-  el.innerHTML=jobs.length?jobs.map(j=>{
+  const gs=S._groups||[];
+  if(!gs.length){
+    el.innerHTML=`<div class="empty small">没有匹配的任务${
+      JF.q||JF.cat||JF.status||JF.since?" — 试试清除筛选":""}</div>`;return;}
+  const cats=(S._jobmeta||{}).categories||{};
+  el.innerHTML=gs.map(g=>{
+    if(g.kind!=="chat"||g.n<=1)return jobRow(g.turns[0]);   // 单轮不折,直接按老样子渲染
+    const k=g.chat_id,open=!!JOPEN[k];
+    const arts=(g.artifacts||[]).map(a=>{
+      const n=a.split("/").pop(),ed=/\.(md|txt|json|csv)$/i.test(n);
+      return `<a class="f small" ${ed?`href="${edLink(a)}"`:`onclick="openLocal('${attr(a)}')"`}
+        title="${attr(a)}">${extChip(n)} ${esc(n)}</a>`;}).join("");
+    return `<div class="job">
+      <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+        ${jobChip({status:g.status})}
+        <button class="tag o lnk" title="回到这条对话继续说"
+          onclick="gotoChat('${attr(k)}')">${esc(cats.chat||"对话")} ↗</button>
+        <b class="small">${esc(g.title)}</b>
+        <span class="tag y" title="这条对话共 ${g.n} 轮">${g.n} 轮</span>
+        <span style="flex:1"></span>
+        ${jobMeta({provider:g.provider,model:g.model,duration_ms:g.duration_ms,cost_usd:g.cost_usd})}
+        <span class="mono muted">${esc(g.last||"")}</span>
+        <button class="sm" onclick="toggleJob('${attr(k)}')">${open?"收起":"展开各轮"}</button>
+      </div>
+      ${arts?`<div class="arts">📎 产出:${arts}</div>`:""}
+      ${open?`<div class="jturns">${g.turns.map(jobRow).join("")}</div>`
+        :`<div class="small muted" style="margin-top:6px">${esc(
+            (g.turns[g.turns.length-1].output||"").slice(0,120).replace(/\s+/g," "))}…</div>`}
+    </div>`;}).join("");}
+
+function jobRow(j){
     const st=jobChip(j);
     const cats=(S._jobmeta||{}).categories||{};
     const arts=(j.artifacts||[]).map(a=>{
@@ -3000,8 +3061,7 @@ function paintJobs(){
         `<div class="small" style="color:var(--warn);margin-top:5px">⚠ 执行中有步骤受权限限制
         ${j.status==="done"?"(任务已完成,产物可能已生成 —— 先确认结果,确有缺失再重跑)":
           "。把上方「AI 权限」切到<b>全部放行</b>后重跑"}。</div>`:""}
-      ${j.output?`<pre>${esc(j.output)}</pre>`:""}</div>`;}).join("")
-    :`<div class="empty small">没有匹配的任务${JF.q||JF.cat||JF.status||JF.since?" — 试试清除筛选":""}</div>`;}
+      ${j.output?`<pre>${esc(j.output)}</pre>`:""}</div>`;}
 
 /* ---------- editor ---------- */
 let edPath=null,edDirty=false,EDMODE="preview",EDSRC="";  // md 默认预览态
