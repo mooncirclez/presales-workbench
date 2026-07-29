@@ -1277,6 +1277,61 @@ async function paintBashToggle(){
     已允许 Bash:AI 可以跑命令,因而<b>能直读 docx/xlsx 原件里的真名</b>(原件内容改不掉),
     也能用 cat 读到被路径规则拒绝的文本。生成 xlsx 之类的任务需要它,用完建议关掉。</p>`:"";}
 
+/* AI 可达的磁盘范围:默认只有工作台目录,家目录其余部分逐项放行。
+   反过来做(默认全拒)是因为黑名单追不上现实 —— 实测家目录 44 个文件夹,
+   手写清单只盖住 12 个,剩下的代码目录、各家 AI 工具的会话记录全是敞开的。 */
+function mDiskScope(){
+  const d=MASKCFG||{};
+  const dirs=d.home_dirs||[],allow=new Set(d.home_allow||[]),extra=d.extra_deny||[];
+  const box=dirs.map(n=>`<label class="small" style="display:inline-block;width:31%;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${attr(n)}">
+    <input type="checkbox" style="width:auto;vertical-align:-1px" ${allow.has(n)?"checked":""}
+      onchange="toggleHomeDir('${attr(n)}',this.checked)"> ${esc(n)}</label>`).join("");
+  modal(`<h3>AI 可达的磁盘范围</h3>
+  <div class="card" style="border-left:2px solid var(--ok);background:var(--ok-bg);padding:11px 13px">
+    <b class="small">工作台目录 <span class="mono">${esc(d.workbench_dir||"")}</span> 始终可读</b>
+    <div class="small" style="margin-top:4px">AI 干活要用的客户、项目、纪要都在里面;
+      知识库另按「AI 可读范围」的目录白名单单独控制。</div>
+  </div>
+  <div class="sec" style="margin-top:14px">家目录下的其他文件夹
+    <span class="tag ${allow.size?"y":"o"}">${allow.size?`放行 ${allow.size}/${dirs.length}`:`全部不放行(${dirs.length})`}</span></div>
+  <div class="small muted" style="margin:2px 0 8px">勾中 = 允许 AI 读。<b>默认一个都不勾</b> ——
+    以后家目录里新增的文件夹也自动挡住,不用回来补名单。</div>
+  <div class="card" style="max-height:200px;overflow:auto;padding:10px 12px">${
+    box||`<span class="small muted">家目录下没有其他文件夹</span>`}</div>
+  <div class="sec" style="margin-top:14px">额外要挡的路径</div>
+  <div class="small muted" style="margin:2px 0 8px">不在家目录下的位置,比如外挂硬盘、共享盘。填绝对路径。</div>
+  <div class="card" style="padding:10px 12px">
+    ${extra.length?`<ul class="plain small">${extra.map((p,i)=>
+      `<li><span class="mono">${esc(p)}</span>
+       ${delBtn(`delExtraDeny(${i})`,"不再挡这个路径")}</li>`).join("")}</ul>`
+     :`<div class="small muted">还没有</div>`}
+    <div class="row" style="margin-top:8px"><input id="ed_path"
+      placeholder="/Volumes/工作盘/客户资料" onkeydown="if(event.key==='Enter')addExtraDeny()">
+      <div style="margin-top:6px"><button class="sm" onclick="addExtraDeny()">添加</button></div></div>
+  </div>
+  <div class="btns"><button class="pri" onclick="closeModal()">完成</button></div>`);}
+
+async function toggleHomeDir(name,on){
+  const a=new Set((MASKCFG&&MASKCFG.home_allow)||[]);
+  on?a.add(name):a.delete(name);
+  try{await api("/api/mask-config",{home_allow:[...a]});MASKCFG=null;await loadMaskCfg();
+    mDiskScope();toast(on?`已放行 ${name}`:`已收回 ${name}`);}
+  catch(e){toast(e.message,4000);}}
+
+async function addExtraDeny(){
+  const v=$("#ed_path").value.trim();if(!v)return;
+  const cur=[...((MASKCFG&&MASKCFG.extra_deny)||[]),v];
+  try{await api("/api/mask-config",{extra_deny:cur});MASKCFG=null;await loadMaskCfg();
+    mDiskScope();toast("已加入拒绝清单");}
+  catch(e){toast(e.message,4000);}}
+
+async function delExtraDeny(i){
+  const cur=[...((MASKCFG&&MASKCFG.extra_deny)||[])];cur.splice(i,1);
+  try{await api("/api/mask-config",{extra_deny:cur});MASKCFG=null;await loadMaskCfg();
+    mDiskScope();toast("已移除");}
+  catch(e){toast(e.message,4000);}}
+
 async function setAllowBash(on){
   try{await api("/api/mask-config",{allow_bash:on});MASKCFG=null;await paintBashToggle();
     toast(on?"已允许 Bash — 二进制原件重新可达":"已禁用 Bash");}
@@ -2443,18 +2498,38 @@ async function doMarketImport(){
   }catch(e){toast(e.message,5000);}}
 
 function mImportSkill(){modal(`<h3>导入技能文件</h3>
-  <div class="row"><label>技能标识(作为目录名,小写英文/数字/短横线)</label>
-    <input id="si_name" placeholder="如 guizang-social-card"></div>
   <div class="row"><label>方式一:选择 zip 包或单个 .md 文件</label>
-    <input id="si_file" type="file" accept=".zip,.md"></div>
+    <input id="si_file" type="file" accept=".zip,.md" onchange="skillIdFromFile(this)"></div>
   <div class="row"><label>方式二:选择整个技能文件夹(含 SKILL.md 及附属文件)</label>
-    <input id="si_dir" type="file" webkitdirectory></div>
+    <input id="si_dir" type="file" webkitdirectory onchange="skillIdFromDir(this)"></div>
+  <div class="row"><label>技能标识(作为目录名)</label>
+    <input id="si_name" placeholder="选完文件会自动填,可修改">
+    <div class="small muted" style="margin-top:4px">只能用小写字母、数字、短横线 ——
+      大写和空格会自动转换,不用自己纠结格式</div></div>
   <p class="small muted">导入到 plugins/skills/&lt;标识&gt;/ 并立即生效。⚠️ 第三方技能 = 别人写的指令,导入前请确认来源可信;导入后可点「编辑」审阅内容。</p>
   <div class="btns"><button onclick="closeModal()">取消</button>
   <button class="pri" onclick="doImportSkill()">导入</button></div>`);$("#si_name").focus();}
+/* 标识规范化:大写转小写、空格与下划线转短横线、去掉其余字符。
+   用户选的文件本来就叫 product-promo-kit.md,没道理让他再手敲一遍还敲错格式。 */
+function normSkillId(s){
+  return (s||"").trim().toLowerCase()
+    .replace(/\.(md|zip)$/,"").replace(/[\s_]+/g,"-")
+    .replace(/[^a-z0-9-]/g,"").replace(/-{2,}/g,"-").replace(/^-+|-+$/g,"").slice(0,41);}
+function skillIdFromFile(el){
+  const f=el.files[0];if(!f)return;
+  const n=$("#si_name");if(n&&!n.value.trim())n.value=normSkillId(f.name);}
+function skillIdFromDir(el){
+  const f=el.files[0];if(!f)return;
+  const top=(f.webkitRelativePath||"").split("/")[0];
+  const n=$("#si_name");if(n&&!n.value.trim())n.value=normSkillId(top);}
+
 async function doImportSkill(){
-  const name=$("#si_name").value.trim();
-  if(!/^[a-z0-9][a-z0-9-]{1,40}$/.test(name))return toast("技能标识不合法");
+  const raw=$("#si_name").value.trim();
+  const name=normSkillId(raw);
+  if(!/^[a-z0-9][a-z0-9-]{1,40}$/.test(name))
+    return toast(raw?`「${raw}」转换后是「${name||"空"}」,仍不合法 —— 需至少 2 个字符,以小写字母或数字开头`
+                    :"请先选择文件,标识会自动填",5000);
+  if(name!==raw){$("#si_name").value=name;toast(`标识已规范为 ${name}`);}
   const one=$("#si_file").files[0];const dirFiles=[...$("#si_dir").files];
   const rd=f=>new Promise((res,rej)=>{const r=new FileReader();
     r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(f);});
@@ -2534,6 +2609,7 @@ function vAI(){
             m==="bypassPermissions"?"全部放行(推荐)":m==="acceptEdits"?"仅文件编辑":"只规划不动手"}</option>`).join("")}
       </select>
       <span class="sp"></span>
+      <button class="sm" onclick="mDiskScope()" title="AI 能读到磁盘上的哪些地方">磁盘范围</button>
       <label class="small muted" title="Bash 是读二进制原件(docx/xlsx)和跑脚本的唯一途径。目录边界由上方的路径规则管,不靠这个开关">
         <input type="checkbox" id="aiBash" onchange="setAllowBash(this.checked)"
           style="width:auto;vertical-align:-1px"> 允许 Bash</label>

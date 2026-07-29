@@ -1576,6 +1576,64 @@ def masked_hits(path, limit=20):
     return hits[:limit]
 
 
+def home_subdirs():
+    """家目录下的顶层文件夹,**不含本工作台自身**(它是 AI 的工作区,必须可读)。"""
+    home = Path.home()
+    root = ROOT.resolve()
+    out = []
+    for p in sorted(home.iterdir()):
+        try:
+            if not p.is_dir() or p.resolve() == root:
+                continue
+        except OSError:
+            continue
+        out.append(p.name)
+    return out
+
+
+def home_deny_rules(c):
+    """把工作台之外的一切挡在 AI 之外 —— **默认全拒,例外由用户逐项放行**。
+
+    为什么是"默认全拒"而不是列一份黑名单:黑名单永远追不上现实。
+    实测时家目录下有 44 个文件夹,手写的清单只盖住 12 个,剩下 30 个
+    (代码目录、各家 AI 工具的会话记录、VPN 配置、远控传输目录)全是敞开的。
+    反过来做,新出现的目录天然被挡住,不需要回头补名单。
+
+    为什么不能直接 deny 整个家目录:工作台自己就在家目录下,而 Claude Code 的
+    deny 优先于 allow,一刀切会把工作区也封死。所以按顶层目录逐个列,跳过工作台。
+
+    路径写法两种都给:官方文档的例子是 `Read(~/.zshrc)`,而**实测只写绝对路径
+    匹配不上** —— AI 用 Glob 照样列出了桌面。取其一命中即可。
+    """
+    ai = c.get("ai", {})
+    allow = {str(x) for x in (ai.get("home_allow") or [])}   # 用户主动放行的顶层目录
+    home = Path.home()
+    out = []
+    for d in home_subdirs():
+        if d in allow:
+            continue
+        out.append(f"Read(~/{d}/**)")
+        out.append(f"Read({home / d}/**)")
+    # 家目录下散落的文件(.zshrc、各类 history)。**不能写成 `Read(~/*)`** ——
+    # glob 的 * 连目录一起匹配,会把工作台自身也封死(实测:customers/ 和已放行的
+    # 知识库目录全部被拒)。只能逐个列出非目录项。
+    for p in sorted(home.iterdir()):
+        try:
+            if p.is_dir():
+                continue
+        except OSError:
+            continue
+        out.append(f"Read(~/{p.name})")
+    for raw in (ai.get("extra_deny") or []):
+        p = str(raw).strip()
+        if not p:
+            continue
+        p = p.rstrip("/")
+        out.append(f"Read({p}/**)")
+        out.append(f"Read({p})")
+    return out
+
+
 def mask_table():
     """映射表全量 —— **唯一会把真名送到浏览器的接口**,只在用户主动点开时调用。
     界面其余地方一律只显示假名,所以它不能混进 /api/state。"""
@@ -1616,6 +1674,7 @@ def ai_deny_rules(c):
         # 仍带真名,审计时实测有 4 个这类文件 AI 读得到。
         "Read(./.trash/**)",
     ]
+    deny += home_deny_rules(c)
     # 只挡原文是不够的:knowledge/.extracted/ 存的是同一批资料的**提取全文**,
     # knowledge/wiki/ 是它们编译出来的知识页。实测漏掉这两处时,Grep 一把命中 180
     # 个文件 —— 锁了正门开了后门,而且 .extracted 才是 AI 真正会读的东西。
@@ -2182,6 +2241,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"subdirs": knowledge_subdirs(),
                                  "whitelist": _c.get("knowledge", {}).get("ai_whitelist") or [],
                                  "mask_dirs": _c.get("knowledge", {}).get("mask_dirs") or [],
+                                 "home_dirs": home_subdirs(),
+                                 "home_allow": _c.get("ai", {}).get("home_allow") or [],
+                                 "extra_deny": _c.get("ai", {}).get("extra_deny") or [],
+                                 "workbench_dir": ROOT.name,
                                  "allow_bash": bool(_c.get("ai", {}).get("allow_bash")),
                                  "deny": ai_deny_rules(_c)})
             elif u.path == "/api/trash":
@@ -2732,6 +2795,22 @@ class Handler(BaseHTTPRequestHandler):
                     if bad:
                         raise ValueError(f"不存在的知识库目录: {'、'.join(bad)}")
                     conf.setdefault("knowledge", {})["mask_dirs"] = md
+                if "home_allow" in body:
+                    ha = [str(x) for x in (body.get("home_allow") or [])]
+                    bad = [x for x in ha if x not in set(home_subdirs())]
+                    if bad:
+                        raise ValueError(f"家目录下没有这些文件夹: {'、'.join(bad)}")
+                    conf.setdefault("ai", {})["home_allow"] = ha
+                if "extra_deny" in body:
+                    ed = []
+                    for raw in (body.get("extra_deny") or []):
+                        v = str(raw).strip().rstrip("/")
+                        if not v:
+                            continue
+                        if not v.startswith("/") and not v.startswith("~"):
+                            raise ValueError(f"请填绝对路径(以 / 或 ~ 开头): {v}")
+                        ed.append(v)
+                    conf.setdefault("ai", {})["extra_deny"] = ed
                 if "allow_bash" in body:
                     conf.setdefault("ai", {})["allow_bash"] = bool(body.get("allow_bash"))
                 cpath.write_text(json.dumps(conf, ensure_ascii=False, indent=2) + "\n",
