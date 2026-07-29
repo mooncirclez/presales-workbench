@@ -47,6 +47,12 @@ border-top:1px solid var(--line);line-height:1.7;margin-left:0;padding-bottom:12
 #side .flinks a{display:inline;padding:0;border-left:none;
   font-size:11px;color:var(--muted);cursor:pointer;text-decoration:none;white-space:nowrap}
 #side .flinks a:hover{color:var(--accent)}
+/* 对话里可点的选项:给出可点的视觉暗示,但不要抢正文的注意力 */
+.bub li.pick{cursor:pointer;border-radius:5px;margin-left:-6px;padding-left:6px;
+  transition:background .12s,color .12s}
+.bub li.pick:hover{background:var(--accent-soft);color:var(--ink)}
+.bub li.pick:hover::after{content:" ＋填入";font-size:11px;color:var(--accent);white-space:nowrap}
+.bub li.picked{background:var(--ok-bg)}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px}
 .dot.ok{background:var(--ok)}.dot.off{background:var(--warn)}.dot.bad{background:var(--bad)}
 /* ---- main ---- */
@@ -2896,7 +2902,7 @@ function paintChat(){
     const run=t.status==="queued"||t.status==="running";
     const bad=t.status==="failed"||t.status==="blocked"||t.status==="timeout";
     const body=run?`<span class="spin"></span>${t.status==="queued"?"排队中…":"正在干活…"}`
-      :bad?esc(t.output||"失败"):md(t.output||"(无输出)");
+      :bad?esc(t.output||"失败"):md(t.output||"(无输出)",true);
     const arts=(t.artifacts||[]).map(a=>{
       const n=a.split("/").pop(),ed=/\.(md|txt|json|csv)$/i.test(n);
       return `<a class="f small" ${ed?`href="${edLink(a)}"`:`onclick="openLocal('${attr(a)}')"`}
@@ -3094,6 +3100,19 @@ function mExportMasked(path,hits){
   <div class="btns">
     <button onclick="copyExpTsv()">复制替换清单</button>
     <button class="pri" onclick="closeModal()">知道了</button></div>`);}
+/* AI 追问时常给一串选项,手打一遍很烦。点列表项 = 把它的文字追加到输入框,
+   点几个再发送即可。不要求 AI 输出特定格式,因此换任何模型都有效。 */
+function pickOpt(el){
+  const ta=$("#aiP");if(!ta)return;
+  let t=(el.innerText||"").trim();
+  if(!t)return;
+  t=t.replace(/\s*[（(].*?[)）]\s*$/,"").trim();   // 去掉尾部括号里的解释
+  const cur=ta.value.trim();
+  ta.value=cur?cur+"、"+t:t;
+  ta.focus();chatGrow(ta);
+  el.classList.add("picked");
+  setTimeout(()=>el.classList.remove("picked"),600);}
+
 /* 勾选行动项:只改源码里对应那一行,不做整篇 HTML 往返,零格式风险 */
 async function toggleTask(idx,checked,ev){
   if(ev)ev.stopPropagation();
@@ -3230,7 +3249,7 @@ document.addEventListener("keydown",e=>{
 window.addEventListener("beforeunload",e=>{if(edDirty){e.preventDefault();e.returnValue="";}});
 
 /* 极简 Markdown 渲染 */
-function md(src){
+function md(src,pick){
   const inline=s=>esc(s)
     .replace(/`([^`]+)`/g,"<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
@@ -3264,6 +3283,8 @@ function md(src){
           ` onclick="toggleTask(${taskIdx},this.checked,event)">`+
           `<span>${inline(task[2])}</span></li>`);
         taskIdx++;}
+      else if(pick&&body.trim())   // 对话里的列表项可点:点一下把文字填进输入框,省得手打
+        out.push(`<li class="pick" onclick="pickOpt(this)" title="点击填入输入框">${inline(body)}</li>`);
       else out.push(`<li>${inline(body)}</li>`);
       i++;continue;}
     closeList();out.push(`<p>${inline(L)}</p>`);i++;}
