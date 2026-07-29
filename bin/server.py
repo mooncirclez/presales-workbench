@@ -1818,6 +1818,10 @@ def run_job(job_id, cmd, env=None):
                           "cache_read_input_tokens"))
             denials = env_j.get("permission_denials") or []
             extra = {"session_id": env_j.get("session_id") or "",
+                     # ⚠️ 这个数是 claude CLI **按 Anthropic 价目表**算的。走第三方端点
+                     # (DeepSeek/Kimi/自建网关)时 CLI 并不知道对方的单价,照旧用
+                     # Anthropic 单价乘 token —— 实测 DeepSeek 一次任务界面显示 $1.00,
+                     # 供应商后台实收 ¥0.30,差 24 倍。所以第三方任务不能拿它当账单。
                      "cost_usd": env_j.get("total_cost_usd") or 0,
                      "turns": env_j.get("num_turns") or 0,
                      "duration_ms": env_j.get("duration_ms") or 0,
@@ -1999,7 +2003,10 @@ def submit_job(c, title, prompt, category=None, chat_id=None):
            "note": note, "session_id": "", "cost_usd": 0,
            "model": (p.get("model") if is_third_party(p)
                      else (c.get("ai", {}).get("model") or "")) or "默认",
-           "provider": p.get("label", "")}
+           "provider": p.get("label", ""),
+           # 走第三方端点时 CLI 报的费用是按 Anthropic 单价算的,不能当账单看。
+           # 记下来让界面据此改变显示方式。
+           "third_party": is_third_party(p)}
     with JOBS_LOCK:
         JOBS[job_id] = job
     t = threading.Thread(target=run_job, args=(job_id, cmd, env), daemon=True)
@@ -2360,6 +2367,7 @@ class Handler(BaseHTTPRequestHandler):
                         "duration_ms": sum(x.get("duration_ms") or 0 for x in js),
                         "artifacts": arts,
                         "provider": last.get("provider", ""),
+                        "third_party": bool(last.get("third_party")),
                         "model": last.get("model", ""),
                         "turns": js,                        # 展开层:每轮保留自己的原话
                     })

@@ -2939,7 +2939,9 @@ function paintChat(){
         ${t.model&&t.model!=="默认"?"· "+esc(t.model):""}
         ${t.duration_ms?"· ⏱ "+fmtDur(t.duration_ms):""}
         ${(t.tok_in||t.tok_out)?`· ↑${fmtTok(t.tok_in)} ↓${fmtTok(t.tok_out)}`:""}
-        ${t.cost_usd?"· $"+Number(t.cost_usd).toFixed(4):""}</div></div>`);}
+        ${t.cost_usd?(t.third_party
+          ?`· <span title="claude CLI 按 Anthropic 单价估算,与该供应商实际计费无关">费用见供应商后台</span>`
+          :"· $"+Number(t.cost_usd).toFixed(4)):""}</div></div>`);}
   if(CHAT.pending)
     rows.push(`<div class="msg me"><div class="bub">${esc(CHAT.pending.shown)}</div>
       <div class="mmeta">${esc(CHAT.pending.at)}</div></div>
@@ -2976,7 +2978,12 @@ function jobMeta(j){
   if(j.tok_in||j.tok_out)bits.push(
     `<span title="token:输入 ${j.tok_in||0}(含缓存读写) / 输出 ${j.tok_out||0}">`+
     `↑${fmtTok(j.tok_in)} ↓${fmtTok(j.tok_out)}</span>`);
-  if(j.cost_usd)bits.push(`<span title="本次花费">$${Number(j.cost_usd).toFixed(4)}</span>`);
+  if(j.cost_usd){
+    // 第三方端点:CLI 按 Anthropic 单价算的钱,和供应商实际账单差一个量级
+    // (实测 DeepSeek 显示 $1.00,后台实收 ¥0.30)。不摆这个数字,只说去哪看。
+    bits.push(j.third_party
+      ? `<span class="muted" title="claude CLI 按 Anthropic 单价估算,与该供应商实际计费无关 —— 请以供应商后台账单为准">费用见供应商后台</span>`
+      : `<span title="本次花费">$${Number(j.cost_usd).toFixed(4)}</span>`);}
   if(j.turns>1)bits.push(`<span title="模型内部轮次">${j.turns}轮</span>`);
   return bits.length?`<span class="jmeta small muted">${bits.join(" · ")}</span>`:"";}
 
@@ -3021,7 +3028,8 @@ function paintJobs(){
         <b class="small">${esc(g.title)}</b>
         <span class="tag y" title="这条对话共 ${g.n} 轮">${g.n} 轮</span>
         <span style="flex:1"></span>
-        ${jobMeta({provider:g.provider,model:g.model,duration_ms:g.duration_ms,cost_usd:g.cost_usd})}
+        ${jobMeta({provider:g.provider,model:g.model,duration_ms:g.duration_ms,
+          cost_usd:g.cost_usd,third_party:g.third_party})}
         <span class="mono muted">${esc(g.last||"")}</span>
         <button class="sm" onclick="toggleJob('${attr(k)}')">${open?"收起":"展开各轮"}</button>
       </div>
